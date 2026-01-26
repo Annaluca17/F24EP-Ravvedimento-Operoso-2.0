@@ -1,0 +1,5 @@
+{
+  "name": "Calcolo Ravvedimento F24EP",
+  "description": "Strumento professionale per il calcolo del Ravvedimento Operoso per Enti Pubblici (F24EP). Gestione calcolo sanzioni (sprint, breve, lungo), interessi legali composti e visualizzazione fac-simile F24EP con codici tributo aggiornati.",
+  "requestFramePermissions": []
+}
