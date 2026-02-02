@@ -1,9 +1,9 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import F24Preview from './components/F24Preview';
-import { TAX_CODES } from './constants';
+import { TAX_CODES, REGION_CODES } from './constants';
 import { F24Row, CalculationResult, InterestPeriod } from './types';
 import { calculateRow, formatCurrency } from './utils/calculation';
 
@@ -18,9 +18,12 @@ function App() {
   const [amount, setAmount] = useState<string>('');
   const [refMonth, setRefMonth] = useState<string>('01');
   const [refYear, setRefYear] = useState<string>(new Date().getFullYear().toString());
+  const [locationCode, setLocationCode] = useState<string>('');
 
-  // Dark Mode State
+  // UI State
   const [darkMode, setDarkMode] = useState(false);
+  const [showRegionTooltip, setShowRegionTooltip] = useState(false);
+  const regionTooltipRef = useRef<HTMLDivElement>(null);
 
   // Modal State
   const [interestModalOpen, setInterestModalOpen] = useState(false);
@@ -45,23 +48,51 @@ function App() {
     }
   }, [darkMode]);
 
+  // Handle clicking outside the tooltip to close it
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (regionTooltipRef.current && !regionTooltipRef.current.contains(event.target as Node)) {
+        setShowRegionTooltip(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [regionTooltipRef]);
+
+  // Reset location code when tax code changes
+  useEffect(() => {
+    setLocationCode('');
+    setShowRegionTooltip(false);
+  }, [selectedTaxCode]);
+
   const toggleDarkMode = () => setDarkMode(!darkMode);
+
+  const selectedTaxInfo = useMemo(() => TAX_CODES.find(t => t.code === selectedTaxCode), [selectedTaxCode]);
+  const isRegionCodeField = selectedTaxInfo?.requiresLocationCode && selectedTaxInfo?.locationCodeLabel?.toLowerCase().includes('regione');
 
   const handleAddRow = () => {
     if (!amount || isNaN(parseFloat(amount))) return;
+    if (selectedTaxInfo?.requiresLocationCode && !locationCode) {
+      alert(`Il campo "${selectedTaxInfo.locationCodeLabel}" è obbligatorio per questo codice tributo.`);
+      return;
+    }
     
-    const taxInfo = TAX_CODES.find(t => t.code === selectedTaxCode);
     const newRow: F24Row = {
       id: Math.random().toString(36).substr(2, 9),
       taxCode: selectedTaxCode,
-      description: taxInfo?.description || '',
+      description: selectedTaxInfo?.description || '',
       originalAmount: parseFloat(amount),
       referenceMonth: refMonth,
-      referenceYear: refYear
+      referenceYear: refYear,
+      section: selectedTaxInfo?.section || 'ERARIO',
+      locationCode: locationCode.toUpperCase()
     };
     
     setRows([...rows, newRow]);
     setAmount('');
+    setLocationCode('');
   };
 
   const handleRemoveRow = (id: string) => {
@@ -155,8 +186,62 @@ function App() {
               </select>
             </div>
             
-            <div className="md:col-span-2">
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Mese (MM)</label>
+            {/* Conditional Input for Region/Municipality Code */}
+            {selectedTaxInfo?.requiresLocationCode ? (
+              <div className="md:col-span-2 relative" ref={regionTooltipRef}>
+                <div className="flex items-center gap-2 mb-2">
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 truncate" title={selectedTaxInfo.locationCodeLabel}>
+                    {selectedTaxInfo.locationCodeLabel}
+                  </label>
+                  {isRegionCodeField && (
+                    <button
+                      type="button"
+                      onClick={() => setShowRegionTooltip(!showRegionTooltip)}
+                      className="text-italia-blue dark:text-blue-400 hover:text-blue-600 focus:outline-none"
+                      title="Elenco Codici Regioni"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+                
+                <input 
+                  type="text"
+                  value={locationCode}
+                  onChange={(e) => setLocationCode(e.target.value)}
+                  maxLength={selectedTaxInfo.locationCodeMaxLength}
+                  className="w-full rounded border-2 border-orange-300 dark:border-orange-500 dark:bg-gray-700 dark:text-white shadow-sm focus:border-italia-blue focus:ring-0 sm:text-base p-2.5 transition-colors uppercase"
+                  placeholder={selectedTaxInfo.locationCodeMaxLength === 2 ? "es. 09" : "es. H501"}
+                />
+
+                {/* Region Codes Tooltip */}
+                {showRegionTooltip && isRegionCodeField && (
+                  <div className="absolute z-20 left-0 mt-1 w-64 p-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-md shadow-xl text-xs max-h-60 overflow-y-auto">
+                    <div className="grid grid-cols-4 gap-x-2 gap-y-1 p-1">
+                      {REGION_CODES.map((region) => (
+                        <React.Fragment key={region.code}>
+                          <button 
+                             onClick={() => { setLocationCode(region.code); setShowRegionTooltip(false); }}
+                             className="col-span-1 font-mono font-bold text-italia-blue dark:text-blue-300 hover:bg-gray-100 dark:hover:bg-gray-600 rounded text-center"
+                          >
+                            {region.code}
+                          </button>
+                          <div className="col-span-3 text-gray-700 dark:text-gray-200 truncate" title={region.name}>{region.name}</div>
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              // Spacer to keep layout consistent if no code needed
+              <div className="md:col-span-2"></div> 
+            )}
+
+            <div className="md:col-span-1">
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Mese</label>
               <select 
                 value={refMonth}
                 onChange={(e) => setRefMonth(e.target.value)}
@@ -169,7 +254,7 @@ function App() {
             </div>
 
             <div className="md:col-span-2">
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Anno (AAAA)</label>
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Anno</label>
               <input 
                 type="number"
                 value={refYear}
@@ -178,8 +263,8 @@ function App() {
               />
             </div>
 
-            <div className="md:col-span-3">
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Importo Omesso (€)</label>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Importo (€)</label>
               <input 
                 type="number"
                 step="0.01"
@@ -213,6 +298,7 @@ function App() {
                 <thead className="bg-gray-100 dark:bg-gray-900">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Codice</th>
+                    <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Sezione/Ente</th>
                     <th className="px-6 py-3 text-left text-xs font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Riferimento</th>
                     <th className="px-6 py-3 text-right text-xs font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Importo Orig.</th>
                     <th className="px-6 py-3 text-right text-xs font-bold text-gray-600 dark:text-gray-300 uppercase tracking-wider">Ritardo</th>
@@ -229,6 +315,10 @@ function App() {
                     return (
                       <tr key={row.id} className="hover:bg-blue-50 dark:hover:bg-gray-700/50 transition-colors">
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900 dark:text-gray-100">{row.taxCode}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">
+                          <div className="font-semibold text-xs uppercase">{row.section}</div>
+                          {row.locationCode && <div className="text-xs font-mono bg-gray-100 dark:bg-gray-700 px-1 rounded inline-block mt-1">{row.locationCode}</div>}
+                        </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">{row.referenceMonth}/{row.referenceYear}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 text-right font-mono">{formatCurrency(row.originalAmount)}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400 text-right">
@@ -254,9 +344,21 @@ function App() {
                             </div>
                           )}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-red-700 dark:text-red-400 font-bold text-right font-mono">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-red-700 dark:text-red-400 font-bold text-right font-mono relative group">
                           <span className="block">{formatCurrency(result.sanctionAmount)}</span>
-                          <span className="text-xs text-gray-500 dark:text-gray-500 font-normal">({result.sanctionPercentage.toFixed(2)}%)</span>
+                          <div className="flex items-center justify-end gap-1">
+                            <span className="text-xs text-gray-500 dark:text-gray-500 font-normal">({result.sanctionPercentage.toFixed(2)}%)</span>
+                            {/* Sanction Formula Tooltip */}
+                            <div className="relative inline-block">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-400 hover:text-italia-blue cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <div className="absolute bottom-full right-0 mb-2 w-48 p-2 bg-gray-800 text-white text-xs rounded shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 text-center pointer-events-none">
+                                  {result.sanctionFormula}
+                                  <div className="absolute top-full right-1 w-2 h-2 bg-gray-800 transform rotate-45 -translate-y-1"></div>
+                                </div>
+                            </div>
+                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-italia-blue dark:text-blue-300 text-right font-mono text-base">
                           {formatCurrency(result.totalTaxWithInterest + result.totalSanction)}

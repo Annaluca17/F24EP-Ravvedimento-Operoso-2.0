@@ -27,7 +27,6 @@ export const calculateLegalInterest = (amount: number, dueDate: Date, payDate: D
   }
 
   // Iterate through defined legal rates to find intersections with the accrual period
-  // We perform a copy of the rates array to sort it just in case, though constants are usually sorted.
   const sortedRates = [...LEGAL_INTEREST_RATES].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
 
   for (const rateObj of sortedRates) {
@@ -48,7 +47,6 @@ export const calculateLegalInterest = (amount: number, dueDate: Date, payDate: D
 
       if (days > 0) {
         // Interest Formula: Amount * Rate * Days / 36500
-        // We use 36500 as the divisor (365 * 100) standard convention
         const periodInterest = (amount * rateObj.rate * days) / 36500;
         
         totalInterest += periodInterest;
@@ -64,61 +62,87 @@ export const calculateLegalInterest = (amount: number, dueDate: Date, payDate: D
     }
   }
 
-  // Handle fallback if periods are missing in constants (though unlikely with proper config)
-  // If we processed ranges but total days < expected, we might need a fallback, 
-  // but for this implementation, we assume constants cover the range.
-
   return { total: totalInterest, details };
 };
 
-export const calculateSanction = (amount: number, daysLate: number, violationDate: Date): { percentage: number, amount: number, type: string } => {
-  // Logic updated based on "Riforma Sanzioni" (D.Lgs 87/2024) effective 01/09/2024.
-  // Base Sanction for omitted payment: 25% (was 30%).
-  // Reduced Base for delays <= 90 days: 12.5% (was 15%).
+export const calculateSanction = (amount: number, daysLate: number, violationDate: Date, payDate: Date): { percentage: number, amount: number, type: string, formula: string } => {
+  // Riforma Sanzioni (D.Lgs 87/2024) applies to violations committed AFTER 01/09/2024.
+  // Art. 5 D.Lgs 87/2024: "Le disposizioni... si applicano alle violazioni commesse a partire dal 1° settembre 2024."
+  const reformDate = new Date('2024-09-01');
+  const isPostReform = violationDate >= reformDate;
+
+  // Base Rates
+  const baseRate = isPostReform ? 25.0 : 30.0;
+  const minRate = isPostReform ? 12.5 : 15.0; // Reduced base for delays <= 90 days (Art 13 c.1 lett a-bis new)
+
+  // Deadlines for "Lungo" and "Lunghissimo" (approximate declaration deadlines)
+  // "Lungo" (lett. b): By the presentation of the declaration for the year of violation (Year X -> submitted Nov X+1)
+  const violationYear = violationDate.getFullYear();
+  // Standard deadline usually 30/11 of following year
+  const declarationDeadlineLungo = new Date(violationYear + 1, 10, 30); // 30 Nov Year+1
+  
+  // "Lunghissimo" (lett. b-bis): By the presentation of the declaration for the subsequent year (Year X -> submitted Nov X+2)
+  const declarationDeadlineLunghissimo = new Date(violationYear + 2, 10, 30); // 30 Nov Year+2
 
   let percentage = 0;
   let type = '';
+  let formula = '';
 
   if (daysLate <= 14) {
     // Ravvedimento Sprint
-    // Reduced to 1/15 per day of the "Breve" amount (1/10 of Min).
-    // Min (<90 days) = 12.5%.
-    // Breve = 1.25%.
-    // Sprint Daily = 1.25% / 15 = 0.0833...%
-    percentage = (1.25 / 15) * daysLate;
+    // Pre-Reform: 0.1% per day (1/10 of 15% / 15 days is approx logic, usually cited as 0.1% fixed or 1/15 of Breve)
+    // Post-Reform: 1/15 of Breve. Breve is 1/10 of 12.5%.
+    if (isPostReform) {
+        const breveRate = minRate / 10; // 1.25%
+        percentage = (breveRate / 15) * daysLate; // ~0.0833% per day
+        formula = `1/15 di Ravv. Breve (1/10 di ${minRate}%) per giorno`;
+    } else {
+        percentage = 0.1 * daysLate;
+        formula = `0,1% per ogni giorno di ritardo`;
+    }
     type = RavvedimentoType.SPRINT;
+
   } else if (daysLate <= 30) {
     // Ravvedimento Breve (Art. 13 c. 1 lett. a)
-    // 1/10 of Minimum (12.5%)
-    percentage = 1.25;
+    // 1/10 of Minimum
+    percentage = minRate / 10;
+    formula = `1/10 del Minimo (${minRate}%)`;
     type = RavvedimentoType.BREVE;
+
   } else if (daysLate <= 90) {
     // Ravvedimento Intermedio (Art. 13 c. 1 lett. a-bis)
-    // 1/9 of Minimum (12.5%) -> ~1.39%
-    percentage = 12.5 / 9;
+    // 1/9 of Minimum
+    percentage = minRate / 9;
+    formula = `1/9 del Minimo (${minRate}%)`;
     type = RavvedimentoType.INTERMEDIO;
-  } else if (daysLate <= 365) {
+
+  } else if (payDate <= declarationDeadlineLungo) {
     // Ravvedimento Lungo (Art. 13 c. 1 lett. b)
-    // 1/8 of Minimum.
-    // Note: For delays > 90 days, the special 12.5% base no longer applies. Base reverts to 25%.
-    percentage = 25 / 8; // 3.125%
+    // 1/8 of Base
+    percentage = baseRate / 8;
+    formula = `1/8 del Base (${baseRate}%)`;
     type = RavvedimentoType.LUNGO;
-  } else if (daysLate <= 730) {
+
+  } else if (payDate <= declarationDeadlineLunghissimo) {
     // Ravvedimento Lunghissimo (Art. 13 c. 1 lett. b-bis)
-    // 1/7 of Minimum (25%)
-    percentage = 25 / 7; // ~3.57%
+    // 1/7 of Base
+    percentage = baseRate / 7;
+    formula = `1/7 del Base (${baseRate}%)`;
     type = RavvedimentoType.LUNGHISSIMO;
+
   } else {
     // Oltre 2 anni (Art. 13 c. 1 lett. b-ter)
-    // 1/6 of Minimum (25%)
-    percentage = 25 / 6; // ~4.17%
+    // 1/6 of Base
+    percentage = baseRate / 6;
+    formula = `1/6 del Base (${baseRate}%)`;
     type = RavvedimentoType.OLTRE;
   }
 
   return {
     percentage: percentage,
     amount: (amount * percentage) / 100,
-    type: type
+    type: type,
+    formula: formula
   };
 };
 
@@ -136,6 +160,7 @@ export const calculateRow = (row: F24Row, dueDateStr: string, payDateStr: string
       interestDetails: [],
       sanctionAmount: 0,
       sanctionPercentage: 0,
+      sanctionFormula: 'Nessuna sanzione',
       totalTaxWithInterest: row.originalAmount,
       totalSanction: 0,
       ravvedimentoType: 'In tempo'
@@ -143,7 +168,7 @@ export const calculateRow = (row: F24Row, dueDateStr: string, payDateStr: string
   }
 
   const interestData = calculateLegalInterest(row.originalAmount, dueDate, payDate);
-  const sanction = calculateSanction(row.originalAmount, daysLate, dueDate);
+  const sanction = calculateSanction(row.originalAmount, daysLate, dueDate, payDate);
 
   return {
     rowId: row.id,
@@ -152,6 +177,7 @@ export const calculateRow = (row: F24Row, dueDateStr: string, payDateStr: string
     interestDetails: interestData.details,
     sanctionAmount: sanction.amount,
     sanctionPercentage: sanction.percentage,
+    sanctionFormula: sanction.formula,
     // F24EP Specific: Tax Code Amount = Original + Interest (Principio del Cumulo)
     totalTaxWithInterest: row.originalAmount + interestData.total,
     totalSanction: sanction.amount,
