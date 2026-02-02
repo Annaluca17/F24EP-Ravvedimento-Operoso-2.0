@@ -1,3 +1,4 @@
+
 export interface InterestRate {
   start: string; // YYYY-MM-DD
   end: string;   // YYYY-MM-DD
@@ -19,10 +20,19 @@ export interface F24Row {
   referenceYear: string;  // YYYY
 }
 
+export interface InterestPeriod {
+  startDate: string;
+  endDate: string;
+  rate: number;
+  days: number;
+  amount: number;
+}
+
 export interface CalculationResult {
   rowId: string;
   daysLate: number;
   legalInterest: number;
+  interestDetails: InterestPeriod[]; // Detailed breakdown
   sanctionAmount: number;
   sanctionPercentage: number;
   totalTaxWithInterest: number; // For F24EP Tax Code column

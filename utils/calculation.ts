@@ -1,5 +1,6 @@
+
 import { LEGAL_INTEREST_RATES, TAX_CODES } from '../constants';
-import { CalculationResult, F24Row, RavvedimentoType } from '../types';
+import { CalculationResult, F24Row, RavvedimentoType, InterestPeriod } from '../types';
 
 export const parseDate = (dateStr: string): Date => {
   return new Date(dateStr);
@@ -10,29 +11,64 @@ export const getDaysDiff = (start: Date, end: Date): number => {
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 };
 
-export const calculateLegalInterest = (amount: number, dueDate: Date, payDate: Date): number => {
+export const calculateLegalInterest = (amount: number, dueDate: Date, payDate: Date): { total: number, details: InterestPeriod[] } => {
   let totalInterest = 0;
-  let currentDate = new Date(dueDate);
-  // Start from the day AFTER the due date
-  currentDate.setDate(currentDate.getDate() + 1);
+  const details: InterestPeriod[] = [];
 
-  while (currentDate <= payDate) {
-    const dateStr = currentDate.toISOString().split('T')[0];
-    
-    // Find rate for this specific day
-    // Assumes constants are sorted or cover the range. Fallback 2.5 is just a safety.
-    const rateObj = LEGAL_INTEREST_RATES.find(r => dateStr >= r.start && dateStr <= r.end);
-    const rate = rateObj ? rateObj.rate : 2.5; 
+  // Interest starts accruing from the day AFTER the due date
+  const accrualStart = new Date(dueDate);
+  accrualStart.setDate(accrualStart.getDate() + 1);
+  
+  const accrualEnd = new Date(payDate);
 
-    // Daily Interest = Amount * Rate% / 365
-    // Note: Standard financial year 365 is used for simplification unless strict 366 required.
-    totalInterest += (amount * rate) / 36500;
-
-    // Move to next day
-    currentDate.setDate(currentDate.getDate() + 1);
+  // If paid on or before due date (plus 1 day adjustment logic), no interest
+  if (accrualStart > accrualEnd) {
+    return { total: 0, details: [] };
   }
 
-  return totalInterest;
+  // Iterate through defined legal rates to find intersections with the accrual period
+  // We perform a copy of the rates array to sort it just in case, though constants are usually sorted.
+  const sortedRates = [...LEGAL_INTEREST_RATES].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+
+  for (const rateObj of sortedRates) {
+    const rateStart = new Date(rateObj.start);
+    const rateEnd = new Date(rateObj.end);
+
+    // Determine the overlap between [RateStart, RateEnd] and [AccrualStart, AccrualEnd]
+    // Max of Starts
+    const periodStart = rateStart > accrualStart ? rateStart : accrualStart;
+    // Min of Ends
+    const periodEnd = rateEnd < accrualEnd ? rateEnd : accrualEnd;
+
+    // Check if there is a valid overlap
+    if (periodStart <= periodEnd) {
+      // Calculate days in this period (Inclusive)
+      const timeDiff = periodEnd.getTime() - periodStart.getTime();
+      const days = Math.floor(timeDiff / (1000 * 3600 * 24)) + 1;
+
+      if (days > 0) {
+        // Interest Formula: Amount * Rate * Days / 36500
+        // We use 36500 as the divisor (365 * 100) standard convention
+        const periodInterest = (amount * rateObj.rate * days) / 36500;
+        
+        totalInterest += periodInterest;
+        
+        details.push({
+          startDate: periodStart.toISOString().split('T')[0],
+          endDate: periodEnd.toISOString().split('T')[0],
+          rate: rateObj.rate,
+          days: days,
+          amount: periodInterest
+        });
+      }
+    }
+  }
+
+  // Handle fallback if periods are missing in constants (though unlikely with proper config)
+  // If we processed ranges but total days < expected, we might need a fallback, 
+  // but for this implementation, we assume constants cover the range.
+
+  return { total: totalInterest, details };
 };
 
 export const calculateSanction = (amount: number, daysLate: number, violationDate: Date): { percentage: number, amount: number, type: string } => {
@@ -97,6 +133,7 @@ export const calculateRow = (row: F24Row, dueDateStr: string, payDateStr: string
       rowId: row.id,
       daysLate: 0,
       legalInterest: 0,
+      interestDetails: [],
       sanctionAmount: 0,
       sanctionPercentage: 0,
       totalTaxWithInterest: row.originalAmount,
@@ -105,17 +142,18 @@ export const calculateRow = (row: F24Row, dueDateStr: string, payDateStr: string
     };
   }
 
-  const interest = calculateLegalInterest(row.originalAmount, dueDate, payDate);
+  const interestData = calculateLegalInterest(row.originalAmount, dueDate, payDate);
   const sanction = calculateSanction(row.originalAmount, daysLate, dueDate);
 
   return {
     rowId: row.id,
     daysLate: daysLate,
-    legalInterest: interest,
+    legalInterest: interestData.total,
+    interestDetails: interestData.details,
     sanctionAmount: sanction.amount,
     sanctionPercentage: sanction.percentage,
     // F24EP Specific: Tax Code Amount = Original + Interest (Principio del Cumulo)
-    totalTaxWithInterest: row.originalAmount + interest,
+    totalTaxWithInterest: row.originalAmount + interestData.total,
     totalSanction: sanction.amount,
     ravvedimentoType: sanction.type
   };

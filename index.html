@@ -8,18 +8,31 @@
     <script>
       tailwind.config = {
         darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              'italia-blue': '#0066CC',
+              'italia-dark': '#1C2024',
+              'italia-bg': '#F0F1F2',
+            },
+            fontFamily: {
+              sans: ['"Titillium Web"', 'sans-serif'],
+            }
+          }
+        }
       }
     </script>
     <style>
-      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Titillium+Web:wght@300;400;600;700&display=swap');
+      
       body {
-        font-family: 'Inter', sans-serif;
+        font-family: 'Titillium Web', sans-serif;
       }
-      .f24-border {
-        border: 1px solid #2563eb;
-      }
-      .f24-header-bg {
-        background-color: #eff6ff;
+      
+      /* Accessibility: Focus visible styling */
+      *:focus-visible {
+        outline: 3px solid #ffcc00; /* Standard high contrast focus color */
+        outline-offset: 2px;
       }
     </style>
   <script type="importmap">
@@ -32,7 +45,7 @@
 }
 </script>
 </head>
-  <body class="bg-gray-50 text-gray-800 dark:bg-gray-900 dark:text-gray-100 transition-colors duration-200">
-    <div id="root"></div>
+  <body class="bg-italia-bg text-gray-800 dark:bg-gray-900 dark:text-gray-100 transition-colors duration-200 flex flex-col min-h-screen">
+    <div id="root" class="flex flex-col min-h-screen"></div>
   </body>
 </html>
