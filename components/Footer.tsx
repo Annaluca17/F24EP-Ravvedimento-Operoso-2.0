@@ -10,7 +10,7 @@ const Footer: React.FC = () => {
             <ul className="space-y-2 text-sm text-gray-300">
               <li><a href="#" className="hover:text-white hover:underline">I Dati della PA</a></li>
               <li><a href="#" className="hover:text-white hover:underline">Amministrazione Trasparente</a></li>
-              <li><a href="#" className="hover:text-white hover:underline">Ufficio Relazioni con il Pubblico</a></li>
+              <li><a href="https://immediaspa.com" className="hover:text-white hover:underline">Ufficio Relazioni con il Pubblico</a></li>
             </ul>
           </div>
           <div>

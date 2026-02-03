@@ -347,7 +347,10 @@ function App() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-red-700 dark:text-red-400 font-bold text-right font-mono relative group">
                           <span className="block">{formatCurrency(result.sanctionAmount)}</span>
                           <div className="flex items-center justify-end gap-1">
-                            <span className="text-xs text-gray-500 dark:text-gray-500 font-normal">({result.sanctionPercentage.toFixed(2)}%)</span>
+                            {/* Display percentage with up to 4 decimals to clarify calculations (e.g. 1.3889% vs 1.39%) */}
+                            <span className="text-xs text-gray-500 dark:text-gray-500 font-normal">
+                              ({new Intl.NumberFormat('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(result.sanctionPercentage)}%)
+                            </span>
                             {/* Sanction Formula Tooltip */}
                             <div className="relative inline-block">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-400 hover:text-italia-blue cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
