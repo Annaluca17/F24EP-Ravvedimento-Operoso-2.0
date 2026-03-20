@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 interface Props {
@@ -32,21 +33,39 @@ const Header: React.FC<Props> = ({ darkMode, toggleDarkMode }) => {
       {/* Main Header - Brand */}
       <div className="bg-white dark:bg-gray-800 border-b-4 border-italia-blue py-6">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-4">
-            {/* Emblem placeholder */}
-            <div className="hidden sm:block">
-               <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-italia-blue dark:text-blue-400" viewBox="0 0 24 24" fill="currentColor">
-                 <path d="M12 2L1 21h22L12 2zm0 3.5L19.5 19h-15L12 5.5z"/>
-               </svg>
+          <div className="flex items-center justify-between gap-4">
+            
+            {/* Left Content: Emblem + Title */}
+            <div className="flex items-center gap-4">
+              {/* Emblem placeholder */}
+              <div className="hidden sm:block">
+                 <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-italia-blue dark:text-blue-400" viewBox="0 0 24 24" fill="currentColor">
+                   <path d="M12 2L1 21h22L12 2zm0 3.5L19.5 19h-15L12 5.5z"/>
+                 </svg>
+              </div>
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-bold text-italia-dark dark:text-white leading-tight">
+                  Ravvedimento Operoso F24EP
+                </h1>
+                <p className="text-base text-gray-600 dark:text-gray-300 font-normal">
+                  Strumento di calcolo per la regolarizzazione tributaria degli Enti Locali
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-italia-dark dark:text-white leading-tight">
-                Ravvedimento Operoso F24EP
-              </h1>
-              <p className="text-base text-gray-600 dark:text-gray-300 font-normal">
-                Strumento di calcolo per la regolarizzazione tributaria degli Enti Locali
-              </p>
+
+            {/* Right Content: Logo Immedia */}
+            <div className="hidden md:block">
+               <img 
+                 src="https://immediaspa.com/wp-content/uploads/2021/05/logo-immedia-spa.png" 
+                 alt="Immedia S.p.A." 
+                 className="h-12 w-auto object-contain" 
+                 onError={(e) => {
+                    // Fallback visual if external image fails
+                    e.currentTarget.style.display = 'none';
+                 }}
+               />
             </div>
+            
           </div>
         </div>
       </div>

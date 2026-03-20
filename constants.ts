@@ -74,6 +74,13 @@ export const TAX_CODES: TaxCode[] = [
     locationCodeLabel: 'Codice Ente/Catastale',
     locationCodeMaxLength: 4
   },
+  {
+    code: '896E',
+    description: 'Sanzione pecuniaria sostituti d\'imposta (es. tardivo invio CU/770)',
+    sanctionCode: '',
+    section: 'ERARIO',
+    isSanction: true
+  },
 ];
 
 export const SANCTION_CODES_DESC: Record<string, string> = {

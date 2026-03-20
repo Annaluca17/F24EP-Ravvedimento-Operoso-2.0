@@ -5,7 +5,7 @@ import Footer from './components/Footer';
 import F24Preview from './components/F24Preview';
 import { TAX_CODES, REGION_CODES } from './constants';
 import { F24Row, CalculationResult, InterestPeriod } from './types';
-import { calculateRow, formatCurrency } from './utils/calculation';
+import { calculateRow, formatCurrency, parseDate, getDaysDiff } from './utils/calculation';
 
 function App() {
   const [originalDueDate, setOriginalDueDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -19,6 +19,10 @@ function App() {
   const [refMonth, setRefMonth] = useState<string>('01');
   const [refYear, setRefYear] = useState<string>(new Date().getFullYear().toString());
   const [locationCode, setLocationCode] = useState<string>('');
+
+  // Late Submission Sanction State
+  const [lateModelType, setLateModelType] = useState<'CU' | '770'>('CU');
+  const [cuCount, setCuCount] = useState<string>('1');
 
   // UI State
   const [darkMode, setDarkMode] = useState(false);
@@ -93,6 +97,58 @@ function App() {
     setRows([...rows, newRow]);
     setAmount('');
     setLocationCode('');
+  };
+
+  const handleAddLateSanction = () => {
+    const dueDate = parseDate(originalDueDate);
+    const payDate = parseDate(ravvedimentoDate);
+    const daysLate = getDaysDiff(dueDate, payDate);
+
+    if (daysLate <= 0) {
+      alert("La data di ravvedimento deve essere successiva alla scadenza originaria per calcolare una sanzione per tardivo invio.");
+      return;
+    }
+
+    let penaltyAmount = 0;
+    let description = '';
+    const declarationYear = parseInt(refYear, 10) || new Date().getFullYear();
+    const incomeYear = declarationYear - 1;
+
+    if (lateModelType === 'CU') {
+      const count = parseInt(cuCount, 10);
+      if (isNaN(count) || count <= 0) {
+        alert("Inserire un numero valido di Certificazioni Uniche.");
+        return;
+      }
+      if (daysLate <= 60) {
+        penaltyAmount = Math.min(count * 33.33, 16666.66);
+        description = `Sanzione tardivo invio CU (entro 60gg) - ${count} cert. - Anno dichiarazione ${declarationYear} redditi ${incomeYear}`;
+      } else {
+        penaltyAmount = Math.min(count * 100, 50000);
+        description = `Sanzione tardivo invio CU (oltre 60gg) - ${count} cert. - Anno dichiarazione ${declarationYear} redditi ${incomeYear}`;
+      }
+    } else if (lateModelType === '770') {
+      if (daysLate <= 90) {
+        penaltyAmount = 25; // 250 / 10
+        description = `Sanzione tardivo invio Modello 770 (entro 90gg) - Anno dichiarazione ${declarationYear} redditi ${incomeYear}`;
+      } else {
+        penaltyAmount = 250;
+        description = `Sanzione tardivo invio Modello 770 (oltre 90gg - Omessa) - Anno dichiarazione ${declarationYear} redditi ${incomeYear}`;
+      }
+    }
+
+    const newRow: F24Row = {
+      id: Math.random().toString(36).substr(2, 9),
+      taxCode: '896E',
+      description: description,
+      originalAmount: penaltyAmount,
+      referenceMonth: '', // No reference month for this sanction
+      referenceYear: declarationYear.toString(),
+      section: 'ERARIO',
+      locationCode: ''
+    };
+    
+    setRows([...rows, newRow]);
   };
 
   const handleRemoveRow = (id: string) => {
@@ -284,6 +340,84 @@ function App() {
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
               </button>
             </div>
+          </div>
+        </section>
+
+        {/* Late Submission Sanctions Card */}
+        <section className="bg-white dark:bg-gray-800 rounded shadow-md border-t-4 border-italia-blue p-6 transition-colors duration-200">
+          <h2 className="text-xl font-bold text-italia-dark dark:text-white mb-6 border-b border-gray-200 dark:border-gray-700 pb-2">
+            3. Sanzioni Tardivo Invio (Modelli Obbligatori)
+          </h2>
+          
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-end">
+            <div className="md:col-span-4">
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Modello</label>
+              <select 
+                value={lateModelType}
+                onChange={(e) => setLateModelType(e.target.value as 'CU' | '770')}
+                className="w-full rounded border-2 border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-italia-blue focus:ring-0 sm:text-base p-2.5 transition-colors"
+              >
+                <option value="CU">Certificazione Unica (CU)</option>
+                <option value="770">Modello 770</option>
+              </select>
+            </div>
+
+            {lateModelType === 'CU' ? (
+              <div className="md:col-span-3">
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Numero Certificazioni</label>
+                <input 
+                  type="number"
+                  min="1"
+                  value={cuCount}
+                  onChange={(e) => setCuCount(e.target.value)}
+                  className="w-full rounded border-2 border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-italia-blue focus:ring-0 sm:text-base p-2.5 transition-colors"
+                />
+              </div>
+            ) : (
+              <div className="md:col-span-3">
+                {/* Spacer or info for 770 */}
+                <div className="text-sm text-gray-500 dark:text-gray-400 pb-2">
+                  La sanzione per il 770 è fissa per dichiarazione.
+                </div>
+              </div>
+            )}
+
+            <div className="md:col-span-2">
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Mese Rif.</label>
+              <select 
+                value={refMonth}
+                onChange={(e) => setRefMonth(e.target.value)}
+                className="w-full rounded border-2 border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-italia-blue focus:ring-0 sm:text-base p-2.5 transition-colors"
+              >
+                {Array.from({length: 12}, (_, i) => String(i + 1).padStart(2, '0')).map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Anno Rif.</label>
+              <input 
+                type="number"
+                value={refYear}
+                onChange={(e) => setRefYear(e.target.value)}
+                className="w-full rounded border-2 border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-italia-blue focus:ring-0 sm:text-base p-2.5 transition-colors"
+              />
+            </div>
+
+            <div className="md:col-span-1">
+              <button 
+                onClick={handleAddLateSanction}
+                className="w-full bg-italia-blue text-white py-3 px-4 rounded font-bold hover:bg-blue-700 dark:hover:bg-blue-600 shadow-md transition-all transform hover:scale-105 flex justify-center items-center"
+                title="Aggiungi Sanzione"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+              </button>
+            </div>
+          </div>
+          <div className="mt-4 text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-700/50 p-3 rounded">
+            <strong>Info Calcolo:</strong> I giorni di ritardo vengono calcolati automaticamente in base alle date impostate nel riquadro 1. 
+            {lateModelType === 'CU' ? ' Entro 60gg: 33,33€ a CU (max 16.666,66€). Oltre 60gg: 100€ a CU (max 50.000€).' : ' Entro 90gg: 25€ (1/10 di 250€). Oltre 90gg: 250€ (Dichiarazione omessa).'}
           </div>
         </section>
 

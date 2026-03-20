@@ -2,7 +2,7 @@
 import React from 'react';
 import { CalculationResult, F24Row } from '../types';
 import { getSanctionCode, formatCurrency } from '../utils/calculation';
-import { SANCTION_CODES_DESC, SANCTION_SECTIONS } from '../constants';
+import { SANCTION_CODES_DESC, SANCTION_SECTIONS, TAX_CODES } from '../constants';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -75,12 +75,18 @@ const F24Preview: React.FC<Props> = ({ rows, results }) => {
       const result = results.find(r => r.rowId === row.id);
       if (!result) return;
       
+      const taxInfo = TAX_CODES.find(t => t.code === row.taxCode);
+      const isSanction = taxInfo?.isSanction;
+      const description = isSanction 
+        ? `"${row.description}"`
+        : `"${row.description} (Incl. interessi € ${result.legalInterest.toFixed(2).replace('.', ',')})"`;
+
       const line = [
         row.section,
         row.taxCode,
         row.locationCode || "",
-        `"${row.description} (Incl. interessi € ${result.legalInterest.toFixed(2).replace('.', ',')})"`,
-        `${row.referenceMonth} ${row.referenceYear}`,
+        description,
+        `${row.referenceMonth} ${row.referenceYear}`.trim(),
         row.referenceYear,
         result.totalTaxWithInterest.toFixed(2).replace('.', ',')
       ];
@@ -139,12 +145,18 @@ const F24Preview: React.FC<Props> = ({ rows, results }) => {
       const result = results.find(r => r.rowId === row.id);
       if (!result) return;
       
+      const taxInfo = TAX_CODES.find(t => t.code === row.taxCode);
+      const isSanction = taxInfo?.isSanction;
+      const description = isSanction
+        ? row.description
+        : `${row.description}\n(Capitale: ${formatCurrency(row.originalAmount)} + Int: ${formatCurrency(result.legalInterest)})`;
+
       tableBody.push([
         row.section,
         row.taxCode,
         row.locationCode || "",
-        `${row.description}\n(Capitale: ${formatCurrency(row.originalAmount)} + Int: ${formatCurrency(result.legalInterest)})`,
-        `${row.referenceMonth} ${row.referenceYear}`,
+        description,
+        `${row.referenceMonth} ${row.referenceYear}`.trim(),
         row.referenceYear,
         formatCurrency(result.totalTaxWithInterest),
         "" // Credit column empty
@@ -290,16 +302,18 @@ const F24Preview: React.FC<Props> = ({ rows, results }) => {
                 <div className="col-span-1 p-2 font-mono font-bold text-gray-800 dark:text-gray-100">{row.locationCode}</div>
                 <div className="col-span-3 p-2 font-mono text-xs text-left truncate px-2 text-gray-700 dark:text-gray-300" title={row.description}>
                   {row.description}
-                  <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5 flex items-center gap-1">
-                    <span>(Incl. interessi € {result.legalInterest.toFixed(2)})</span>
-                    {result.legalInterest > 0 && result.legalInterest < 1.03 && (
-                      <span className="text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/30 px-1 rounded border border-orange-200 dark:border-orange-800" title="L'interesse può non essere dovuto in quanto inferiore al minimale (€ 1,03)">
-                        ⚠️ &lt; Min
-                      </span>
-                    )}
-                  </div>
+                  {!TAX_CODES.find(t => t.code === row.taxCode)?.isSanction && (
+                    <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5 flex items-center gap-1">
+                      <span>(Incl. interessi € {result.legalInterest.toFixed(2)})</span>
+                      {result.legalInterest > 0 && result.legalInterest < 1.03 && (
+                        <span className="text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/30 px-1 rounded border border-orange-200 dark:border-orange-800" title="L'interesse può non essere dovuto in quanto inferiore al minimale (€ 1,03)">
+                          ⚠️ &lt; Min
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <div className="col-span-2 p-2 font-mono text-gray-900 dark:text-gray-100">{row.referenceMonth} {row.referenceYear}</div>
+                <div className="col-span-2 p-2 font-mono text-gray-900 dark:text-gray-100">{`${row.referenceMonth} ${row.referenceYear}`.trim()}</div>
                 <div className="col-span-1 p-2 font-mono text-gray-900 dark:text-gray-100">{row.referenceYear}</div>
                 <div className="col-span-2 p-2 font-mono font-bold text-right pr-4 text-italia-blue dark:text-blue-400">
                   {formatCurrency(result.totalTaxWithInterest)}

@@ -13,6 +13,7 @@ export interface TaxCode {
   requiresLocationCode?: boolean; // True if needs region/municipality code
   locationCodeLabel?: string; // "Codice Regione", "Codice Catastale", etc.
   locationCodeMaxLength?: number;
+  isSanction?: boolean; // True if this code is already a sanction (no ravvedimento applied)
 }
 
 export interface F24Row {

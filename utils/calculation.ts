@@ -153,6 +153,24 @@ export const calculateRow = (row: F24Row, dueDateStr: string, payDateStr: string
   
   const daysLate = getDaysDiff(dueDate, payDate);
   
+  const taxInfo = TAX_CODES.find(t => t.code === row.taxCode);
+  const isSanction = taxInfo?.isSanction;
+
+  if (isSanction) {
+    return {
+      rowId: row.id,
+      daysLate: 0,
+      legalInterest: 0,
+      interestDetails: [],
+      sanctionAmount: 0,
+      sanctionPercentage: 0,
+      sanctionFormula: 'Sanzione fissa (nessun ravvedimento)',
+      totalTaxWithInterest: row.originalAmount,
+      totalSanction: 0,
+      ravvedimentoType: 'N/A'
+    };
+  }
+
   if (daysLate <= 0) {
     return {
       rowId: row.id,
