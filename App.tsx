@@ -16,13 +16,15 @@ function App() {
   // New Row State
   const [selectedTaxCode, setSelectedTaxCode] = useState<string>(TAX_CODES[0].code);
   const [amount, setAmount] = useState<string>('');
-  const [refMonth, setRefMonth] = useState<string>('01');
-  const [refYear, setRefYear] = useState<string>(new Date().getFullYear().toString());
+  const [tributiRefMonth, setTributiRefMonth] = useState<string>('01');
+  const [tributiRefYear, setTributiRefYear] = useState<string>(new Date().getFullYear().toString());
   const [locationCode, setLocationCode] = useState<string>('');
 
   // Late Submission Sanction State
   const [lateModelType, setLateModelType] = useState<'CU' | '770'>('CU');
   const [cuCount, setCuCount] = useState<string>('1');
+  const [sanctionRefMonth, setSanctionRefMonth] = useState<string>('01');
+  const [sanctionRefYear, setSanctionRefYear] = useState<string>(new Date().getFullYear().toString());
 
   // UI State
   const [darkMode, setDarkMode] = useState(false);
@@ -78,6 +80,13 @@ function App() {
 
   const handleAddRow = () => {
     if (!amount || isNaN(parseFloat(amount))) return;
+    
+    const yearNum = parseInt(tributiRefYear, 10);
+    if (isNaN(yearNum) || yearNum < 2000 || yearNum > 2099) {
+      alert("Inserire un anno valido (2000-2099).");
+      return;
+    }
+
     if (selectedTaxInfo?.requiresLocationCode && !locationCode) {
       alert(`Il campo "${selectedTaxInfo.locationCodeLabel}" è obbligatorio per questo codice tributo.`);
       return;
@@ -88,8 +97,8 @@ function App() {
       taxCode: selectedTaxCode,
       description: selectedTaxInfo?.description || '',
       originalAmount: parseFloat(amount),
-      referenceMonth: refMonth,
-      referenceYear: refYear,
+      referenceMonth: tributiRefMonth,
+      referenceYear: tributiRefYear,
       section: selectedTaxInfo?.section || 'ERARIO',
       locationCode: locationCode.toUpperCase()
     };
@@ -111,7 +120,11 @@ function App() {
 
     let penaltyAmount = 0;
     let description = '';
-    const declarationYear = parseInt(refYear, 10) || new Date().getFullYear();
+    const declarationYear = parseInt(sanctionRefYear, 10);
+    if (isNaN(declarationYear) || declarationYear < 2000 || declarationYear > 2099) {
+      alert("Inserire un anno valido (2000-2099).");
+      return;
+    }
     const incomeYear = declarationYear - 1;
 
     if (lateModelType === 'CU') {
@@ -299,8 +312,8 @@ function App() {
             <div className="md:col-span-1">
               <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Mese</label>
               <select 
-                value={refMonth}
-                onChange={(e) => setRefMonth(e.target.value)}
+                value={tributiRefMonth}
+                onChange={(e) => setTributiRefMonth(e.target.value)}
                 className="w-full rounded border-2 border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-italia-blue focus:ring-0 sm:text-base p-2.5 transition-colors"
               >
                 {Array.from({length: 12}, (_, i) => String(i + 1).padStart(2, '0')).map(m => (
@@ -313,8 +326,8 @@ function App() {
               <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Anno</label>
               <input 
                 type="number"
-                value={refYear}
-                onChange={(e) => setRefYear(e.target.value)}
+                value={tributiRefYear}
+                onChange={(e) => setTributiRefYear(e.target.value)}
                 className="w-full rounded border-2 border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-italia-blue focus:ring-0 sm:text-base p-2.5 transition-colors"
               />
             </div>
@@ -385,8 +398,8 @@ function App() {
             <div className="md:col-span-2">
               <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Mese Rif.</label>
               <select 
-                value={refMonth}
-                onChange={(e) => setRefMonth(e.target.value)}
+                value={sanctionRefMonth}
+                onChange={(e) => setSanctionRefMonth(e.target.value)}
                 className="w-full rounded border-2 border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-italia-blue focus:ring-0 sm:text-base p-2.5 transition-colors"
               >
                 {Array.from({length: 12}, (_, i) => String(i + 1).padStart(2, '0')).map(m => (
@@ -399,8 +412,8 @@ function App() {
               <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Anno Rif.</label>
               <input 
                 type="number"
-                value={refYear}
-                onChange={(e) => setRefYear(e.target.value)}
+                value={sanctionRefYear}
+                onChange={(e) => setSanctionRefYear(e.target.value)}
                 className="w-full rounded border-2 border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-italia-blue focus:ring-0 sm:text-base p-2.5 transition-colors"
               />
             </div>
@@ -478,7 +491,7 @@ function App() {
                             </div>
                           )}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-red-700 dark:text-red-400 font-bold text-right font-mono relative group">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-red-700 dark:text-red-400 font-bold text-right font-mono relative">
                           <span className="block">{formatCurrency(result.sanctionAmount)}</span>
                           <div className="flex items-center justify-end gap-1">
                             {/* Display percentage with up to 4 decimals to clarify calculations (e.g. 1.3889% vs 1.39%) */}
@@ -486,7 +499,7 @@ function App() {
                               ({new Intl.NumberFormat('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(result.sanctionPercentage)}%)
                             </span>
                             {/* Sanction Formula Tooltip */}
-                            <div className="relative inline-block">
+                            <div className="relative inline-block group">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-400 hover:text-italia-blue cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                 </svg>
