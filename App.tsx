@@ -23,7 +23,6 @@ function App() {
   // Late Submission Sanction State
   const [lateModelType, setLateModelType] = useState<'CU' | '770'>('CU');
   const [cuCount, setCuCount] = useState<string>('1');
-  const [sanctionRefMonth, setSanctionRefMonth] = useState<string>('01');
   const [sanctionRefYear, setSanctionRefYear] = useState<string>(new Date().getFullYear().toString());
 
   // UI State
@@ -133,29 +132,47 @@ function App() {
         alert("Inserire un numero valido di Certificazioni Uniche.");
         return;
       }
-      if (daysLate <= 60) {
-        penaltyAmount = Math.min(count * 33.33, 16666.66);
+      
+      // New CU rules
+      if (daysLate <= 5) {
+        alert("Nessuna sanzione per trasmissione CU entro 5 giorni dalla scadenza.");
+        return;
+      } else if (daysLate <= 60) {
+        // Base 100, reduced to 1/3 = 33.33, then ravvedimento 1/9 = 3.70
+        penaltyAmount = Math.min(count * 3.70, 16666.66 / 9); 
         description = `Sanzione tardivo invio CU (entro 60gg) - ${count} cert. - Anno dichiarazione ${declarationYear} redditi ${incomeYear}`;
+      } else if (daysLate <= 90) {
+        // Base 100, ravvedimento 1/9 = 11.11
+        penaltyAmount = Math.min(count * 11.11, 50000 / 9);
+        description = `Sanzione tardivo invio CU (entro 90gg) - ${count} cert. - Anno dichiarazione ${declarationYear} redditi ${incomeYear}`;
       } else {
-        penaltyAmount = Math.min(count * 100, 50000);
-        description = `Sanzione tardivo invio CU (oltre 60gg) - ${count} cert. - Anno dichiarazione ${declarationYear} redditi ${incomeYear}`;
+        const oct31NextYear = new Date(declarationYear + 1, 9, 31); // Oct 31 of next year
+        if (payDate <= oct31NextYear) {
+           penaltyAmount = Math.min(count * 12.50, 50000 / 8);
+           description = `Sanzione tardivo invio CU (entro termine 770 anno succ.) - ${count} cert. - Anno dichiarazione ${declarationYear} redditi ${incomeYear}`;
+        } else {
+           // Fallback to 1/7 (14.29)
+           penaltyAmount = Math.min(count * 14.29, 50000 / 7);
+           description = `Sanzione tardivo invio CU (oltre termine 770 anno succ.) - ${count} cert. - Anno dichiarazione ${declarationYear} redditi ${incomeYear}`;
+        }
       }
     } else if (lateModelType === '770') {
       if (daysLate <= 90) {
-        penaltyAmount = 25; // 250 / 10
+        // Base 250, ravvedimento 1/10 = 25.00
+        penaltyAmount = 25.00;
         description = `Sanzione tardivo invio Modello 770 (entro 90gg) - Anno dichiarazione ${declarationYear} redditi ${incomeYear}`;
       } else {
-        penaltyAmount = 250;
-        description = `Sanzione tardivo invio Modello 770 (oltre 90gg - Omessa) - Anno dichiarazione ${declarationYear} redditi ${incomeYear}`;
+        alert("Modello 770 tardivo oltre 90 giorni: Dichiarazione omessa. Ravvedimento NON ammesso.");
+        return;
       }
     }
 
     const newRow: F24Row = {
       id: Math.random().toString(36).substr(2, 9),
-      taxCode: '896E',
+      taxCode: '896E', // Updated tax code to 896E for F24EP
       description: description,
       originalAmount: penaltyAmount,
-      referenceMonth: '', // No reference month for this sanction
+      referenceMonth: '', 
       referenceYear: declarationYear.toString(),
       section: 'ERARIO',
       locationCode: ''
@@ -395,21 +412,10 @@ function App() {
               </div>
             )}
 
-            <div className="md:col-span-2">
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Mese Rif.</label>
-              <select 
-                value={sanctionRefMonth}
-                onChange={(e) => setSanctionRefMonth(e.target.value)}
-                className="w-full rounded border-2 border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-italia-blue focus:ring-0 sm:text-base p-2.5 transition-colors"
-              >
-                {Array.from({length: 12}, (_, i) => String(i + 1).padStart(2, '0')).map(m => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="md:col-span-2">
-              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Anno Rif.</label>
+            <div className="md:col-span-4">
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                Anno Rif. <span className="font-normal text-xs text-gray-500">(Es. Modello 2026 per redditi 2025)</span>
+              </label>
               <input 
                 type="number"
                 value={sanctionRefYear}
@@ -430,7 +436,7 @@ function App() {
           </div>
           <div className="mt-4 text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-700/50 p-3 rounded">
             <strong>Info Calcolo:</strong> I giorni di ritardo vengono calcolati automaticamente in base alle date impostate nel riquadro 1. 
-            {lateModelType === 'CU' ? ' Entro 60gg: 33,33€ a CU (max 16.666,66€). Oltre 60gg: 100€ a CU (max 50.000€).' : ' Entro 90gg: 25€ (1/10 di 250€). Oltre 90gg: 250€ (Dichiarazione omessa).'}
+            {lateModelType === 'CU' ? ' Entro 60gg: 3,70€ a CU (max 1.851,85€). Entro 90gg: 11,11€ a CU (max 5.555,55€).' : ' Entro 90gg: 25,00€ (1/10 di 250€). Oltre 90gg: Dichiarazione omessa.'}
           </div>
         </section>
 
