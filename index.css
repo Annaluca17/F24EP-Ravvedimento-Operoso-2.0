@@ -1,0 +1,15 @@
+@import url('https://fonts.googleapis.com/css2?family=Titillium+Web:wght@300;400;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Titillium Web', sans-serif;
+}
+
+/* Accessibility: Focus visible styling */
+*:focus-visible {
+  outline: 3px solid #ffcc00; /* Standard high contrast focus color */
+  outline-offset: 2px;
+}

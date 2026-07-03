@@ -1,9 +1,15 @@
-
-import { LEGAL_INTEREST_RATES, TAX_CODES } from '../constants';
+import { LEGAL_INTEREST_RATES, TAX_CODES, DECLARATION_DEADLINE, SANCTION_REFORM_DATE } from '../constants';
 import { CalculationResult, F24Row, RavvedimentoType, InterestPeriod } from '../types';
 
+// Le stringhe 'YYYY-MM-DD' vengono parsate come mezzanotte UTC: tutte le date
+// di confronto devono quindi essere costruite in UTC (utcDate) per evitare
+// off-by-one ai confini (es. pagamento esattamente il giorno di scadenza).
 export const parseDate = (dateStr: string): Date => {
   return new Date(dateStr);
+};
+
+export const utcDate = (year: number, month: number, day: number): Date => {
+  return new Date(Date.UTC(year, month, day));
 };
 
 export const getDaysDiff = (start: Date, end: Date): number => {
@@ -17,17 +23,18 @@ export const roundAmount = (value: number): number => {
   return Number(Math.round(Number(value + "e2")) + "e-2");
 };
 
-export const calculateLegalInterest = (amount: number, dueDate: Date, payDate: Date): { total: number, details: InterestPeriod[] } => {
+export const calculateLegalInterest = (amount: number, dueDate: Date, payDate: Date): { total: number, details: InterestPeriod[], warning?: string } => {
   let totalInterest = 0;
   const details: InterestPeriod[] = [];
+  let warning: string | undefined;
 
   // Interest starts accruing from the day AFTER the due date
   const accrualStart = new Date(dueDate);
-  accrualStart.setDate(accrualStart.getDate() + 1);
-  
+  accrualStart.setUTCDate(accrualStart.getUTCDate() + 1);
+
   const accrualEnd = new Date(payDate);
 
-  // If paid on or before due date (plus 1 day adjustment logic), no interest
+  // If paid on or before due date, no interest
   if (accrualStart > accrualEnd) {
     return { total: 0, details: [] };
   }
@@ -35,17 +42,21 @@ export const calculateLegalInterest = (amount: number, dueDate: Date, payDate: D
   // Iterate through defined legal rates to find intersections with the accrual period
   const sortedRates = [...LEGAL_INTEREST_RATES].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
 
+  // Se il periodo di maturazione inizia prima della tabella tassi, la parte
+  // scoperta non viene conteggiata: va segnalato, non ignorato in silenzio.
+  const firstRateStart = new Date(sortedRates[0].start);
+  if (accrualStart < firstRateStart) {
+    warning = `Attenzione: il periodo dal ${accrualStart.toISOString().split('T')[0]} al ${sortedRates[0].start} non è coperto dalla tabella dei tassi legali; gli interessi di tale intervallo NON sono conteggiati.`;
+  }
+
   for (const rateObj of sortedRates) {
     const rateStart = new Date(rateObj.start);
     const rateEnd = new Date(rateObj.end);
 
-    // Determine the overlap between [RateStart, RateEnd] and [AccrualStart, AccrualEnd]
-    // Max of Starts
+    // Overlap between [RateStart, RateEnd] and [AccrualStart, AccrualEnd]
     const periodStart = rateStart > accrualStart ? rateStart : accrualStart;
-    // Min of Ends
     const periodEnd = rateEnd < accrualEnd ? rateEnd : accrualEnd;
 
-    // Check if there is a valid overlap
     if (periodStart <= periodEnd) {
       // Calculate days in this period (Inclusive)
       const timeDiff = periodEnd.getTime() - periodStart.getTime();
@@ -55,9 +66,9 @@ export const calculateLegalInterest = (amount: number, dueDate: Date, payDate: D
         // Interest Formula: Amount * Rate * Days / 36500
         // We do NOT round per period, only the total, to preserve precision
         const periodInterest = (amount * rateObj.rate * days) / 36500;
-        
+
         totalInterest += periodInterest;
-        
+
         details.push({
           startDate: periodStart.toISOString().split('T')[0],
           endDate: periodEnd.toISOString().split('T')[0],
@@ -69,22 +80,23 @@ export const calculateLegalInterest = (amount: number, dueDate: Date, payDate: D
     }
   }
 
-  return { total: roundAmount(totalInterest), details };
+  return { total: roundAmount(totalInterest), details, warning };
 };
 
 export const calculateSanction = (amount: number, daysLate: number, violationDate: Date, payDate: Date): { percentage: number, amount: number, type: string, formula: string } => {
-  // Riforma Sanzioni (D.Lgs 87/2024) applies to violations committed AFTER 01/09/2024.
-  const reformDate = new Date('2024-09-01');
+  // Riforma Sanzioni (D.Lgs 87/2024): violazioni commesse dal 01/09/2024.
+  const reformDate = parseDate(SANCTION_REFORM_DATE);
   const isPostReform = violationDate >= reformDate;
 
   // Base Rates
   const baseRate = isPostReform ? 25.0 : 30.0;
   const minRate = isPostReform ? 12.5 : 15.0; // Reduced base for delays <= 90 days
 
-  // Deadlines for "Lungo" and "Lunghissimo" (approximate declaration deadlines)
-  const violationYear = violationDate.getFullYear();
-  const declarationDeadlineLungo = new Date(violationYear + 1, 10, 30); // 30 Nov Year+1
-  const declarationDeadlineLunghissimo = new Date(violationYear + 2, 10, 30); // 30 Nov Year+2
+  // Termine di presentazione della dichiarazione (Mod. 770, 31/10) relativa
+  // all'anno in cui è stata commessa la violazione, e dell'anno successivo.
+  const violationYear = violationDate.getUTCFullYear();
+  const declarationDeadline = utcDate(violationYear + 1, DECLARATION_DEADLINE.month, DECLARATION_DEADLINE.day);
+  const declarationDeadlineNextYear = utcDate(violationYear + 2, DECLARATION_DEADLINE.month, DECLARATION_DEADLINE.day);
 
   let percentage = 0;
   let type = '';
@@ -117,20 +129,29 @@ export const calculateSanction = (amount: number, daysLate: number, violationDat
     formula = `1/9 del Minimo (${minRate}%)`;
     type = RavvedimentoType.INTERMEDIO;
 
-  } else if (payDate <= declarationDeadlineLungo) {
-    // Ravvedimento Lungo: 1/8 of Base (Usually Base = Min)
+  } else if (payDate <= declarationDeadline) {
+    // Ravvedimento Lungo: 1/8 entro il termine della dichiarazione
+    // relativa all'anno della violazione
     percentage = baseRate / 8;
     formula = `1/8 del Base (${baseRate}%)`;
     type = RavvedimentoType.LUNGO;
 
-  } else if (payDate <= declarationDeadlineLunghissimo) {
-    // Ravvedimento Lunghissimo: 1/7 of Base
+  } else if (isPostReform) {
+    // Post riforma: oltre il termine della dichiarazione la riduzione è 1/7
+    // fisso (lo scaglione 1/6 è stato abolito dal D.Lgs 87/2024)
+    percentage = baseRate / 7;
+    formula = `1/7 del Base (${baseRate}%)`;
+    type = RavvedimentoType.OLTRE_POST_RIFORMA;
+
+  } else if (payDate <= declarationDeadlineNextYear) {
+    // Pre riforma - Ravvedimento Lunghissimo: 1/7 entro il termine della
+    // dichiarazione dell'anno successivo
     percentage = baseRate / 7;
     formula = `1/7 del Base (${baseRate}%)`;
     type = RavvedimentoType.LUNGHISSIMO;
 
   } else {
-    // Oltre 2 anni: 1/6 of Base
+    // Pre riforma - Oltre: 1/6 of Base
     percentage = baseRate / 6;
     formula = `1/6 del Base (${baseRate}%)`;
     type = RavvedimentoType.OLTRE;
@@ -150,13 +171,10 @@ export const calculateSanction = (amount: number, daysLate: number, violationDat
 export const calculateRow = (row: F24Row, dueDateStr: string, payDateStr: string): CalculationResult => {
   const dueDate = parseDate(dueDateStr);
   const payDate = parseDate(payDateStr);
-  
-  const daysLate = getDaysDiff(dueDate, payDate);
-  
-  const taxInfo = TAX_CODES.find(t => t.code === row.taxCode);
-  const isSanction = taxInfo?.isSanction;
 
-  if (isSanction) {
+  const daysLate = getDaysDiff(dueDate, payDate);
+
+  if (row.kind === 'SANZIONE') {
     return {
       rowId: row.id,
       daysLate: 0,
@@ -197,6 +215,7 @@ export const calculateRow = (row: F24Row, dueDateStr: string, payDateStr: string
     daysLate: daysLate,
     legalInterest: interestData.total,
     interestDetails: interestData.details,
+    interestWarning: interestData.warning,
     sanctionAmount: sanction.amount,
     sanctionPercentage: sanction.percentage,
     sanctionFormula: sanction.formula,

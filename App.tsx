@@ -3,9 +3,10 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import F24Preview from './components/F24Preview';
-import { TAX_CODES, REGION_CODES } from './constants';
-import { F24Row, CalculationResult, InterestPeriod } from './types';
-import { calculateRow, formatCurrency, parseDate, getDaysDiff } from './utils/calculation';
+import InterestModal, { InterestModalData } from './components/InterestModal';
+import { TAX_CODES, REGION_CODES, MIN_INTEREST_THRESHOLD } from './constants';
+import { F24Row, CalculationResult } from './types';
+import { calculateRow, formatCurrency, parseDate, getDaysDiff, utcDate } from './utils/calculation';
 
 function App() {
   const [originalDueDate, setOriginalDueDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -31,8 +32,7 @@ function App() {
   const regionTooltipRef = useRef<HTMLDivElement>(null);
 
   // Modal State
-  const [interestModalOpen, setInterestModalOpen] = useState(false);
-  const [selectedInterestDetails, setSelectedInterestDetails] = useState<{code: string, amount: number, details: InterestPeriod[]} | null>(null);
+  const [selectedInterestDetails, setSelectedInterestDetails] = useState<InterestModalData | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem('color-theme');
@@ -92,7 +92,8 @@ function App() {
     }
     
     const newRow: F24Row = {
-      id: Math.random().toString(36).substr(2, 9),
+      id: crypto.randomUUID(),
+      kind: selectedTaxInfo?.isSanction ? 'SANZIONE' : 'TRIBUTO',
       taxCode: selectedTaxCode,
       description: selectedTaxInfo?.description || '',
       originalAmount: parseFloat(amount),
@@ -146,7 +147,8 @@ function App() {
         penaltyAmount = Math.min(count * 11.11, 50000 / 9);
         description = `Sanzione tardivo invio CU (entro 90gg) - ${count} cert. - Anno dichiarazione ${declarationYear} redditi ${incomeYear}`;
       } else {
-        const oct31NextYear = new Date(declarationYear + 1, 9, 31); // Oct 31 of next year
+        // Termine 770 dell'anno successivo (31/10), in UTC come le date parsate
+        const oct31NextYear = utcDate(declarationYear + 1, 9, 31);
         if (payDate <= oct31NextYear) {
            penaltyAmount = Math.min(count * 12.50, 50000 / 8);
            description = `Sanzione tardivo invio CU (entro termine 770 anno succ.) - ${count} cert. - Anno dichiarazione ${declarationYear} redditi ${incomeYear}`;
@@ -168,11 +170,12 @@ function App() {
     }
 
     const newRow: F24Row = {
-      id: Math.random().toString(36).substr(2, 9),
-      taxCode: '896E', // Updated tax code to 896E for F24EP
+      id: crypto.randomUUID(),
+      kind: 'SANZIONE',
+      taxCode: '896E', // Sanzione pecuniaria sostituti d'imposta (F24EP)
       description: description,
       originalAmount: penaltyAmount,
-      referenceMonth: '', 
+      referenceMonth: '',
       referenceYear: declarationYear.toString(),
       section: 'ERARIO',
       locationCode: ''
@@ -185,17 +188,16 @@ function App() {
     setRows(rows.filter(r => r.id !== id));
   };
 
-  const openInterestModal = (code: string, originalAmount: number, details: InterestPeriod[]) => {
+  const openInterestModal = (row: F24Row, result: CalculationResult) => {
     setSelectedInterestDetails({
-      code,
-      amount: originalAmount,
-      details
+      code: row.taxCode,
+      amount: row.originalAmount,
+      details: result.interestDetails,
+      warning: result.interestWarning
     });
-    setInterestModalOpen(true);
   };
 
   const closeInterestModal = () => {
-    setInterestModalOpen(false);
     setSelectedInterestDetails(null);
   };
 
@@ -472,7 +474,7 @@ function App() {
                           <div className="font-semibold text-xs uppercase">{row.section}</div>
                           {row.locationCode && <div className="text-xs font-mono bg-gray-100 dark:bg-gray-700 px-1 rounded inline-block mt-1">{row.locationCode}</div>}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">{row.referenceMonth}/{row.referenceYear}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400">{row.referenceMonth ? `${row.referenceMonth}/${row.referenceYear}` : row.referenceYear}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100 text-right font-mono">{formatCurrency(row.originalAmount)}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400 text-right">
                           <span className="block font-semibold">{result.daysLate} gg</span>
@@ -481,8 +483,11 @@ function App() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-orange-700 dark:text-orange-400 font-bold text-right font-mono">
                           <div className="flex items-center justify-end gap-2">
                             <span>{formatCurrency(result.legalInterest)}</span>
-                            <button 
-                              onClick={() => openInterestModal(row.taxCode, row.originalAmount, result.interestDetails)}
+                            {result.interestWarning && (
+                              <span title={result.interestWarning} className="cursor-help">⚠️</span>
+                            )}
+                            <button
+                              onClick={() => openInterestModal(row, result)}
                               className="text-italia-blue dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 focus:outline-none focus:text-blue-800"
                               title="Visualizza dettaglio calcolo interessi"
                             >
@@ -491,7 +496,7 @@ function App() {
                               </svg>
                             </button>
                           </div>
-                          {result.legalInterest > 0 && result.legalInterest < 1.03 && (
+                          {result.legalInterest > 0 && result.legalInterest < MIN_INTEREST_THRESHOLD && (
                             <div className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-orange-100 text-orange-800 mt-1">
                               &lt; Min
                             </div>
@@ -543,77 +548,10 @@ function App() {
       </main>
 
       {/* Interest Details Modal */}
-      {interestModalOpen && selectedInterestDetails && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full flex flex-col max-h-[90vh] border-t-4 border-italia-blue">
-            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900 rounded-t-lg">
-              <div>
-                <h3 className="text-lg font-bold text-italia-dark dark:text-white">Dettaglio Calcolo Interessi Legali</h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Codice Tributo: <span className="font-mono font-bold">{selectedInterestDetails.code}</span> - Capitale: {formatCurrency(selectedInterestDetails.amount)}</p>
-              </div>
-              <button onClick={closeInterestModal} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="p-6 overflow-y-auto">
-              <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-                Gli interessi legali sono calcolati pro-rata temporis in base al tasso legale vigente per ciascun periodo di ritardo.
-              </p>
-              <div className="border rounded-md overflow-hidden border-gray-200 dark:border-gray-700">
-                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                  <thead className="bg-gray-100 dark:bg-gray-900">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-600 dark:text-gray-300 uppercase">Periodo</th>
-                      <th className="px-4 py-3 text-center text-xs font-bold text-gray-600 dark:text-gray-300 uppercase">Giorni</th>
-                      <th className="px-4 py-3 text-center text-xs font-bold text-gray-600 dark:text-gray-300 uppercase">Tasso</th>
-                      <th className="px-4 py-3 text-right text-xs font-bold text-gray-600 dark:text-gray-300 uppercase">Importo</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                    {selectedInterestDetails.details.length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="px-4 py-4 text-center text-sm text-gray-500">Nessun interesse maturato.</td>
-                      </tr>
-                    ) : (
-                      selectedInterestDetails.details.map((detail, idx) => (
-                        <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                          <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
-                            Dal {new Date(detail.startDate).toLocaleDateString('it-IT')} al {new Date(detail.endDate).toLocaleDateString('it-IT')}
-                          </td>
-                          <td className="px-4 py-3 text-center text-sm font-mono text-gray-700 dark:text-gray-300">{detail.days}</td>
-                          <td className="px-4 py-3 text-center text-sm font-mono text-gray-700 dark:text-gray-300">{detail.rate.toFixed(2)}%</td>
-                          <td className="px-4 py-3 text-right text-sm font-mono font-bold text-italia-blue dark:text-blue-400">
-                            {formatCurrency(detail.amount)}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                  <tfoot className="bg-gray-50 dark:bg-gray-900 font-bold border-t border-gray-200 dark:border-gray-700">
-                    <tr>
-                      <td colSpan={3} className="px-4 py-3 text-right text-sm text-gray-800 dark:text-gray-200 uppercase">Totale Interessi</td>
-                      <td className="px-4 py-3 text-right text-sm font-mono text-italia-blue dark:text-blue-400">
-                        {formatCurrency(selectedInterestDetails.details.reduce((sum, d) => sum + d.amount, 0))}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </div>
-            <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 rounded-b-lg flex justify-end">
-              <button 
-                onClick={closeInterestModal}
-                className="bg-italia-blue text-white px-4 py-2 rounded text-sm font-semibold hover:bg-blue-700 transition-colors shadow-sm"
-              >
-                Chiudi
-              </button>
-            </div>
-          </div>
-        </div>
+      {selectedInterestDetails && (
+        <InterestModal data={selectedInterestDetails} onClose={closeInterestModal} />
       )}
-      
+
       <Footer />
     </>
   );

@@ -2,17 +2,36 @@
 import { InterestRate, TaxCode } from './types';
 
 // Historical Legal Interest Rates (Tasso Legale)
-// Source: Italian Civil Code Art. 1284 updates
+// Source: Art. 1284 c.c. - Decreti MEF annuali
 export const LEGAL_INTEREST_RATES: InterestRate[] = [
+  { start: '2010-01-01', end: '2010-12-31', rate: 1.0 },
+  { start: '2011-01-01', end: '2011-12-31', rate: 1.5 },
+  { start: '2012-01-01', end: '2012-12-31', rate: 2.5 },
+  { start: '2013-01-01', end: '2013-12-31', rate: 2.5 },
+  { start: '2014-01-01', end: '2014-12-31', rate: 1.0 },
+  { start: '2015-01-01', end: '2015-12-31', rate: 0.5 },
+  { start: '2016-01-01', end: '2016-12-31', rate: 0.2 },
+  { start: '2017-01-01', end: '2017-12-31', rate: 0.1 },
+  { start: '2018-01-01', end: '2018-12-31', rate: 0.3 },
   { start: '2019-01-01', end: '2019-12-31', rate: 0.8 },
   { start: '2020-01-01', end: '2020-12-31', rate: 0.05 },
   { start: '2021-01-01', end: '2021-12-31', rate: 0.01 },
   { start: '2022-01-01', end: '2022-12-31', rate: 1.25 },
   { start: '2023-01-01', end: '2023-12-31', rate: 5.0 },
   { start: '2024-01-01', end: '2024-12-31', rate: 2.5 },
-  { start: '2025-01-01', end: '2025-12-31', rate: 2.0 }, // Projected/Current
-  { start: '2026-01-01', end: '2099-12-31', rate: 1.6 }, // Future projection from OCR
+  { start: '2025-01-01', end: '2025-12-31', rate: 2.0 },
+  { start: '2026-01-01', end: '2099-12-31', rate: 1.6 }, // Ultimo tasso noto, esteso in avanti: aggiornare a ogni decreto MEF
 ];
+
+// Termine di presentazione del Mod. 770 (dichiarazione dei sostituti d'imposta): 31 ottobre.
+// Usato come spartiacque per le riduzioni del ravvedimento (lungo/oltre). Month è 0-based.
+export const DECLARATION_DEADLINE = { month: 9, day: 31 };
+
+// Entrata in vigore della Riforma Sanzioni D.Lgs 87/2024 (violazioni commesse dal 01/09/2024)
+export const SANCTION_REFORM_DATE = '2024-09-01';
+
+// Sotto questa soglia l'interesse può non essere dovuto (minimale di versamento)
+export const MIN_INTEREST_THRESHOLD = 1.03;
 
 // Common F24EP Tax Codes
 // Mapped to their respective Sanction Codes (Codes starting with 89xx usually)

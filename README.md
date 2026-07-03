@@ -1,20 +1,30 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Ravvedimento Operoso F24EP
 
-# Run and deploy your AI Studio app
+Strumento di calcolo del ravvedimento operoso per Enti Pubblici (modello F24EP):
 
-This contains everything you need to run your app locally.
+- Calcolo sanzioni ridotte (sprint, breve, intermedio, lungo) con distinzione tra regime
+  pre e post Riforma D.Lgs 87/2024 (violazioni commesse dal 01/09/2024).
+- Calcolo interessi legali pro-rata temporis in base ai tassi storici (dal 2010).
+- Sanzioni per tardivo invio CU / Modello 770.
+- Anteprima fac-simile F24EP con aggregazione delle sanzioni ed export CSV / PDF.
 
-View your app in AI Studio: https://ai.studio/apps/ad0c60a6-00db-40e6-a38c-8517c81e64c7
+## Avvio locale
 
-## Run Locally
+**Prerequisiti:** Node.js 18+
 
-**Prerequisites:**  Node.js
+```bash
+npm install
+npm run dev
+```
 
+## Script
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+- `npm run dev` — server di sviluppo (porta 3000)
+- `npm run build` — type-check e build di produzione
+- `npm run preview` — anteprima della build
+- `npm test` — test unitari sulla logica di calcolo (Vitest)
+
+## Note
+
+I calcoli sono un supporto operativo e non sostituiscono le verifiche ufficiali.
+I tassi legali e i termini dichiarativi sono definiti in `constants.ts`.
