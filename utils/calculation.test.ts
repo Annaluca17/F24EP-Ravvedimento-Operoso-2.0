@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateSanction, calculateLegalInterest, calculateRow, roundAmount, getDaysDiff, parseDate, getLateSanctionTiers, findLateSanctionTier } from './calculation';
+import { calculateSanction, calculateLegalInterest, calculateRow, roundAmount, getDaysDiff, parseDate, getLateSanctionTiers, findLateSanctionTier, getCuDeadline } from './calculation';
 import { RavvedimentoType, F24Row } from '../types';
 
 const d = (s: string) => parseDate(s);
@@ -230,5 +230,22 @@ describe('getLateSanctionTiers - 770', () => {
   it('entro 90 gg € 25, oltre non ammesso', () => {
     expect(findLateSanctionTier(tiers, d('2027-01-29'))!.total).toBe(25);
     expect(findLateSanctionTier(tiers, d('2027-01-30'))!.total).toBeNull();
+  });
+});
+
+describe('getCuDeadline', () => {
+  it('preset con slittamento weekend', () => {
+    expect(getCuDeadline('DIP', 2026).toISOString().slice(0, 10)).toBe('2026-03-16');
+    expect(getCuDeadline('DIP', 2025).toISOString().slice(0, 10)).toBe('2025-03-17'); // 16/03/2025 domenica
+    expect(getCuDeadline('AUT', 2026).toISOString().slice(0, 10)).toBe('2026-03-31');
+    expect(getCuDeadline('ESENTI', 2026).toISOString().slice(0, 10)).toBe('2026-11-02'); // 31/10 sabato
+  });
+
+  it('finestre 60/90 gg dal 31/03', () => {
+    const tiers = getLateSanctionTiers('CU', 1, getCuDeadline('AUT', 2026));
+    expect(findLateSanctionTier(tiers, d('2026-05-30'))!.id).toBe('cu-60');
+    expect(findLateSanctionTier(tiers, d('2026-05-31'))!.id).toBe('cu-90');
+    expect(findLateSanctionTier(tiers, d('2026-06-29'))!.id).toBe('cu-90');
+    expect(findLateSanctionTier(tiers, d('2026-06-30'))!.id).toBe('cu-770');
   });
 });

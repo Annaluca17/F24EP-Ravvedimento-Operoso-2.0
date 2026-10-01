@@ -4,9 +4,9 @@ import Header from './components/Header';
 import Footer from './components/Footer';
 import F24Preview from './components/F24Preview';
 import InterestModal, { InterestModalData } from './components/InterestModal';
-import { TAX_CODES, REGION_CODES, MIN_INTEREST_THRESHOLD } from './constants';
+import { TAX_CODES, REGION_CODES, MIN_INTEREST_THRESHOLD, CU_DEADLINES } from './constants';
 import { F24Row, CalculationResult } from './types';
-import { calculateRow, formatCurrency, formatDate, parseDate, getDaysDiff, getLateSanctionTiers, findLateSanctionTier } from './utils/calculation';
+import { calculateRow, formatCurrency, formatDate, parseDate, getDaysDiff, getLateSanctionTiers, findLateSanctionTier, getCuDeadline } from './utils/calculation';
 
 function App() {
   const [originalDueDate, setOriginalDueDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -25,6 +25,8 @@ function App() {
   const [lateModelType, setLateModelType] = useState<'CU' | '770'>('CU');
   const [cuCount, setCuCount] = useState<string>('1');
   const [sanctionRefYear, setSanctionRefYear] = useState<string>(new Date().getFullYear().toString());
+  const [cuType, setCuType] = useState<keyof typeof CU_DEADLINES | 'MANUALE'>('DIP');
+  const [cuManualDueDate, setCuManualDueDate] = useState<string>('');
 
   // UI State
   const [darkMode, setDarkMode] = useState(false);
@@ -111,10 +113,19 @@ function App() {
   const lateCount = lateModelType === 'CU' ? parseInt(cuCount, 10) : 1;
   const today = new Date().toISOString().split('T')[0];
 
+  // CU: scadenza di trasmissione propria (preset o manuale); 770: Scadenza Originaria del riquadro 1
+  const cuDueDate = useMemo(() => {
+    if (cuType === 'MANUALE') return cuManualDueDate;
+    const year = parseInt(sanctionRefYear, 10);
+    if (isNaN(year) || year < 2000 || year > 2099) return '';
+    return getCuDeadline(cuType, year).toISOString().split('T')[0];
+  }, [cuType, cuManualDueDate, sanctionRefYear]);
+  const lateDueDate = lateModelType === 'CU' ? cuDueDate : originalDueDate;
+
   const lateTiers = useMemo(() => {
-    if (isNaN(lateCount) || lateCount <= 0 || !originalDueDate) return [];
-    return getLateSanctionTiers(lateModelType, lateCount, parseDate(originalDueDate));
-  }, [lateModelType, lateCount, originalDueDate]);
+    if (isNaN(lateCount) || lateCount <= 0 || !lateDueDate) return [];
+    return getLateSanctionTiers(lateModelType, lateCount, parseDate(lateDueDate));
+  }, [lateModelType, lateCount, lateDueDate]);
 
   const selectedLateTier = useMemo(
     () => (ravvedimentoDate ? findLateSanctionTier(lateTiers, parseDate(ravvedimentoDate)) : undefined),
@@ -124,10 +135,14 @@ function App() {
 
   const handleAddLateSanction = (payDateOverride?: string) => {
     const payDateStr = payDateOverride ?? ravvedimentoDate;
-    const daysLate = getDaysDiff(parseDate(originalDueDate), parseDate(payDateStr));
+    if (!lateDueDate) {
+      alert("Indicare la scadenza di trasmissione della CU.");
+      return;
+    }
+    const daysLate = getDaysDiff(parseDate(lateDueDate), parseDate(payDateStr));
 
     if (daysLate <= 0) {
-      alert("La data di ravvedimento deve essere successiva alla scadenza originaria per calcolare una sanzione per tardivo invio.");
+      alert("La data di ravvedimento deve essere successiva alla scadenza per calcolare una sanzione per tardivo invio.");
       return;
     }
 
@@ -422,16 +437,48 @@ function App() {
               </button>
             </div>
           </div>
+          {lateModelType === 'CU' && (
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-end mt-6">
+              <div className="md:col-span-7">
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Tipologia CU (termine di trasmissione)</label>
+                <select
+                  value={cuType}
+                  onChange={(e) => {
+                    const v = e.target.value as typeof cuType;
+                    if (v === 'MANUALE' && !cuManualDueDate) setCuManualDueDate(cuDueDate);
+                    setCuType(v);
+                  }}
+                  className="w-full rounded border-2 border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-italia-blue focus:ring-0 sm:text-base p-2.5 transition-colors"
+                >
+                  {Object.entries(CU_DEADLINES).map(([k, v]) => (
+                    <option key={k} value={k}>{v.label}</option>
+                  ))}
+                  <option value="MANUALE">Data manuale</option>
+                </select>
+              </div>
+              <div className="md:col-span-4">
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Scadenza trasmissione CU</label>
+                <input
+                  type="date"
+                  value={cuDueDate}
+                  disabled={cuType !== 'MANUALE'}
+                  onChange={(e) => setCuManualDueDate(e.target.value)}
+                  className="w-full rounded border-2 border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-italia-blue focus:ring-0 sm:text-base p-2.5 transition-colors disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:text-gray-500"
+                />
+              </div>
+            </div>
+          )}
+
           <div className="mt-4 text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-700/50 p-3 rounded">
             <strong>Info Calcolo:</strong> Scaglione determinato dalla Data Ravvedimento del riquadro 1.
             {lateModelType === 'CU'
-              ? ' CU: € 100 per certificazione (max € 50.000); se trasmessa entro 60 gg ridotta a 1/3 (max € 20.000). Si assume trasmissione della CU alla data di pagamento.'
-              : ' Mod. 770: entro 90 gg € 25,00 (1/10 di € 250). Oltre 90 gg dichiarazione omessa.'}
+              ? ' Ritardo calcolato dalla Scadenza trasmissione CU (sabato/domenica slittano al lunedì). CU: € 100 per certificazione (max € 50.000); se trasmessa entro 60 gg ridotta a 1/3 (max € 20.000). Si assume trasmissione della CU alla data di pagamento.'
+              : ' Ritardo calcolato dalla Scadenza Originaria del riquadro 1. Mod. 770: entro 90 gg € 25,00 (1/10 di € 250). Oltre 90 gg dichiarazione omessa.'}
           </div>
 
-          {lateTiers.length > 0 && (
+          {lateModelType === 'CU' && lateTiers.length > 0 && (
             <div className="mt-6">
-              <h3 className="text-base font-bold text-italia-dark dark:text-white mb-2">Simulazione ravvedimento</h3>
+              <h3 className="text-base font-bold text-italia-dark dark:text-white mb-2">Simulazione ravvedimento Certificazione Unica</h3>
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 text-sm">
                   <thead className="bg-gray-100 dark:bg-gray-900">
