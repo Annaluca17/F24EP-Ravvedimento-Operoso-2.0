@@ -1,4 +1,4 @@
-import { LEGAL_INTEREST_RATES, TAX_CODES, DECLARATION_DEADLINE, SANCTION_REFORM_DATE, CU_SANCTION, MOD770_LATE_SANCTION } from '../constants';
+import { LEGAL_INTEREST_RATES, TAX_CODES, DECLARATION_DEADLINE, SANCTION_REFORM_DATE, CU_SANCTION, CU_DEADLINES, MOD770_LATE_SANCTION } from '../constants';
 import { CalculationResult, F24Row, RavvedimentoType, InterestPeriod, LateModel, LateSanctionTier } from '../types';
 
 // Le stringhe 'YYYY-MM-DD' vengono parsate come mezzanotte UTC: tutte le date
@@ -307,6 +307,15 @@ export const getLateSanctionTiers = (model: LateModel, count: number, dueDate: D
 
 export const findLateSanctionTier = (tiers: LateSanctionTier[], payDate: Date): LateSanctionTier | undefined =>
   tiers.find(t => !t.informative && t.from && t.from <= payDate && (!t.to || payDate <= t.to));
+
+// Scadenza di trasmissione CU per l'anno indicato, con slittamento del
+// sabato/domenica al lunedì (festività infrasettimanali non gestite).
+export const getCuDeadline = (type: keyof typeof CU_DEADLINES, year: number): Date => {
+  const { month, day } = CU_DEADLINES[type];
+  let d = utcDate(year, month, day);
+  while (d.getUTCDay() === 0 || d.getUTCDay() === 6) d = addDays(d, 1);
+  return d;
+};
 
 export const formatDate = (date: Date): string => {
   const [y, m, d] = date.toISOString().split('T')[0].split('-');

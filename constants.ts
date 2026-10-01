@@ -35,6 +35,14 @@ export const SANCTION_REFORM_DATE = '2024-09-01';
 // 60 giorni dalla scadenza, ridotta a un terzo con massimo € 20.000.
 export const CU_SANCTION = { perCert: 100, max: 50000, reducedMax: 20000 };
 
+// Termini ordinari di trasmissione telematica CU (istruzioni CU 2026). Month 0-based.
+// Termini che cadono di sabato o domenica slittano al primo giorno feriale successivo.
+export const CU_DEADLINES = {
+  DIP: { label: 'Lavoro dipendente e assimilati (16/03)', month: 2, day: 16 },
+  AUT: { label: 'Lavoro autonomo abituale (31/03)', month: 2, day: 31 },
+  ESENTI: { label: 'Solo redditi esenti / non precompilata (31/10)', month: 9, day: 31 },
+} as const;
+
 // Sanzione Mod. 770 presentato entro 90 giorni dalla scadenza (dichiarazione tardiva)
 export const MOD770_LATE_SANCTION = 250;
 
