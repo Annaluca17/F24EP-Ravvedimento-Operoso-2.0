@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateSanction, calculateLegalInterest, calculateRow, roundAmount, getDaysDiff, parseDate } from './calculation';
+import { calculateSanction, calculateLegalInterest, calculateRow, roundAmount, getDaysDiff, parseDate, getLateSanctionTiers, findLateSanctionTier } from './calculation';
 import { RavvedimentoType, F24Row } from '../types';
 
 const d = (s: string) => parseDate(s);
@@ -166,5 +166,69 @@ describe('calculateRow', () => {
     const r = calculateRow(baseRow, '2025-06-30', '2025-06-30');
     expect(r.totalSanction).toBe(0);
     expect(r.ravvedimentoType).toBe('In tempo');
+  });
+});
+
+describe('getLateSanctionTiers - CU', () => {
+  const due = d('2026-03-16'); // CU 2026, regime post riforma
+  const tiers = getLateSanctionTiers('CU', 10, due);
+  const at = (s: string) => findLateSanctionTier(tiers, d(s));
+
+  it('entro 60 gg: 1/3 × 1/9', () => {
+    const t = at('2026-05-15')!;
+    expect(t.id).toBe('cu-60');
+    expect(t.total).toBe(37.04);
+  });
+
+  it('61-90 gg: 1/9', () => {
+    expect(at('2026-05-16')!.id).toBe('cu-90');
+    expect(at('2026-06-14')!.total).toBe(111.11);
+  });
+
+  it('oltre 90 gg entro 770 anno successivo: 1/8', () => {
+    expect(at('2026-06-15')!.id).toBe('cu-770');
+    const t = at('2027-10-31')!;
+    expect(t.total).toBe(125);
+    expect(t.label).toBe('Entro termine 770/2027');
+  });
+
+  it('oltre termine 770: 1/7 senza termine finale', () => {
+    const t = at('2027-11-01')!;
+    expect(t.id).toBe('cu-oltre');
+    expect(t.total).toBe(142.86);
+    expect(t.to).toBeNull();
+  });
+
+  it('nessuna esenzione nei primi 5 giorni', () => {
+    expect(at('2026-03-17')!.id).toBe('cu-60');
+  });
+
+  it('1/6 e 1/5 solo informativi', () => {
+    const info = tiers.filter(t => t.informative).map(t => [t.reduction, t.total]);
+    expect(info).toEqual([['1/6', 166.67], ['1/5', 200]]);
+  });
+
+  it('tetti: € 20.000 entro 60 gg, € 50.000 oltre', () => {
+    const big = getLateSanctionTiers('CU', 1000, due);
+    const t60 = big.find(t => t.id === 'cu-60')!;
+    expect(t60.total).toBe(2222.22);
+    expect(t60.capped).toBe(true);
+    expect(big.find(t => t.id === 'cu-770')!.total).toBe(6250);
+    expect(big.find(t => t.id === 'cu-770')!.capped).toBe(true);
+  });
+
+  it('pre riforma: 1/7 entro 770 anno successivo, poi 1/6', () => {
+    const pre = getLateSanctionTiers('CU', 1, d('2024-03-16'));
+    expect(findLateSanctionTier(pre, d('2026-10-31'))!.reduction).toBe('1/7');
+    expect(findLateSanctionTier(pre, d('2026-11-01'))!.reduction).toBe('1/6');
+    expect(pre.filter(t => t.informative).map(t => t.reduction)).toEqual(['1/5']);
+  });
+});
+
+describe('getLateSanctionTiers - 770', () => {
+  const tiers = getLateSanctionTiers('770', 1, d('2026-10-31'));
+  it('entro 90 gg € 25, oltre non ammesso', () => {
+    expect(findLateSanctionTier(tiers, d('2027-01-29'))!.total).toBe(25);
+    expect(findLateSanctionTier(tiers, d('2027-01-30'))!.total).toBeNull();
   });
 });

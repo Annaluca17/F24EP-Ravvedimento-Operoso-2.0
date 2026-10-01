@@ -1,5 +1,5 @@
-import { LEGAL_INTEREST_RATES, TAX_CODES, DECLARATION_DEADLINE, SANCTION_REFORM_DATE } from '../constants';
-import { CalculationResult, F24Row, RavvedimentoType, InterestPeriod } from '../types';
+import { LEGAL_INTEREST_RATES, TAX_CODES, DECLARATION_DEADLINE, SANCTION_REFORM_DATE, CU_SANCTION, MOD770_LATE_SANCTION } from '../constants';
+import { CalculationResult, F24Row, RavvedimentoType, InterestPeriod, LateModel, LateSanctionTier } from '../types';
 
 // Le stringhe 'YYYY-MM-DD' vengono parsate come mezzanotte UTC: tutte le date
 // di confronto devono quindi essere costruite in UTC (utcDate) per evitare
@@ -224,6 +224,93 @@ export const calculateRow = (row: F24Row, dueDateStr: string, payDateStr: string
     totalSanction: sanction.amount,
     ravvedimentoType: sanction.type
   };
+};
+
+export const addDays = (date: Date, days: number): Date => {
+  const d = new Date(date);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d;
+};
+
+// Scaglioni di ravvedimento per la sanzione da tardivo invio CU / 770.
+// Le finestre temporali partono dal giorno successivo alla scadenza; gli
+// scaglioni legati a un evento (schema d'atto, constatazione) sono solo
+// informativi e non selezionabili per data.
+// Ipotesi: data di trasmissione della CU coincidente con la data di pagamento.
+export const getLateSanctionTiers = (model: LateModel, count: number, dueDate: Date): LateSanctionTier[] => {
+  const tiers: LateSanctionTier[] = [];
+
+  if (model === '770') {
+    const perUnit = roundAmount(MOD770_LATE_SANCTION / 10);
+    tiers.push({
+      id: '770-90', label: 'Entro 90 gg', reduction: '1/10',
+      from: addDays(dueDate, 1), to: addDays(dueDate, 90),
+      perUnit, total: perUnit, capped: false, informative: false,
+    });
+    tiers.push({
+      id: '770-oltre', label: 'Oltre 90 gg', reduction: '—',
+      from: addDays(dueDate, 91), to: null,
+      perUnit: null, total: null, capped: false, informative: false,
+      note: 'Dichiarazione omessa: ravvedimento non ammesso',
+    });
+    return tiers;
+  }
+
+  const isPostReform = dueDate >= parseDate(SANCTION_REFORM_DATE);
+  const base = CU_SANCTION.perCert * count;
+  const cappedBase = Math.min(base, CU_SANCTION.max);
+  const reducedBase = Math.min(base / 3, CU_SANCTION.reducedMax);
+
+  // Termine 770 relativo all'anno della violazione (e dell'anno successivo, pre riforma)
+  const violationYear = dueDate.getUTCFullYear();
+  const decl1 = utcDate(violationYear + 1, DECLARATION_DEADLINE.month, DECLARATION_DEADLINE.day);
+  const decl2 = utcDate(violationYear + 2, DECLARATION_DEADLINE.month, DECLARATION_DEADLINE.day);
+
+  const timed = (id: string, label: string, reduction: string, divisor: number, from: Date, to: Date | null, reduced = false) => {
+    if (to && from > to) return; // finestra vuota (es. scadenza a ridosso del termine 770)
+    const b = reduced ? reducedBase : cappedBase;
+    const nominal = reduced ? base / 3 : base;
+    tiers.push({
+      id, label, reduction, from, to,
+      perUnit: roundAmount(CU_SANCTION.perCert / (reduced ? 3 : 1) / divisor),
+      total: roundAmount(b / divisor),
+      capped: b < nominal,
+      informative: false,
+    });
+  };
+
+  timed('cu-60', 'Entro 60 gg', '1/3 × 1/9', 9, addDays(dueDate, 1), addDays(dueDate, 60), true);
+  timed('cu-90', 'Entro 90 gg', '1/9', 9, addDays(dueDate, 61), addDays(dueDate, 90));
+  timed('cu-770', `Entro termine 770/${violationYear + 1}`, '1/8', 8, addDays(dueDate, 91), decl1);
+  if (isPostReform) {
+    timed('cu-oltre', `Oltre termine 770/${violationYear + 1}`, '1/7', 7, addDays(decl1, 1), null);
+  } else {
+    timed('cu-770-succ', `Entro termine 770/${violationYear + 2}`, '1/7', 7, addDays(decl1, 1), decl2);
+    timed('cu-oltre', `Oltre termine 770/${violationYear + 2}`, '1/6', 6, addDays(decl2, 1), null);
+  }
+
+  const informative = (id: string, label: string, reduction: string, divisor: number) => {
+    tiers.push({
+      id, label, reduction, from: null, to: null,
+      perUnit: roundAmount(CU_SANCTION.perCert / divisor),
+      total: roundAmount(cappedBase / divisor),
+      capped: cappedBase < base,
+      informative: true,
+      note: 'Dipende da un evento, non da una data',
+    });
+  };
+  if (isPostReform) informative('cu-schema', "Dopo comunicazione schema d'atto", '1/6', 6);
+  informative('cu-pvc', 'Dopo constatazione della violazione', '1/5', 5);
+
+  return tiers;
+};
+
+export const findLateSanctionTier = (tiers: LateSanctionTier[], payDate: Date): LateSanctionTier | undefined =>
+  tiers.find(t => !t.informative && t.from && t.from <= payDate && (!t.to || payDate <= t.to));
+
+export const formatDate = (date: Date): string => {
+  const [y, m, d] = date.toISOString().split('T')[0].split('-');
+  return `${d}/${m}/${y}`;
 };
 
 export const formatCurrency = (val: number) => {

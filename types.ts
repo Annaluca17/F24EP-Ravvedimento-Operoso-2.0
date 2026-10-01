@@ -61,3 +61,18 @@ export enum RavvedimentoType {
   OLTRE = "Oltre 2 anni",                               // solo pre-riforma
   OLTRE_POST_RIFORMA = "Oltre termine dichiarazione"    // post-riforma: 1/7 fisso
 }
+
+export type LateModel = 'CU' | '770';
+
+export interface LateSanctionTier {
+  id: string;
+  label: string;
+  reduction: string;        // es. "1/3 × 1/9"
+  from: Date | null;        // null = scaglione legato a un evento (informativo)
+  to: Date | null;          // null = senza termine finale
+  perUnit: number | null;   // € per certificazione (o per dichiarazione 770)
+  total: number | null;     // null = ravvedimento non ammesso
+  capped: boolean;          // tetto massimo applicato
+  informative: boolean;
+  note?: string;
+}

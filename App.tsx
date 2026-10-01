@@ -6,7 +6,7 @@ import F24Preview from './components/F24Preview';
 import InterestModal, { InterestModalData } from './components/InterestModal';
 import { TAX_CODES, REGION_CODES, MIN_INTEREST_THRESHOLD } from './constants';
 import { F24Row, CalculationResult } from './types';
-import { calculateRow, formatCurrency, parseDate, getDaysDiff, utcDate } from './utils/calculation';
+import { calculateRow, formatCurrency, formatDate, parseDate, getDaysDiff, getLateSanctionTiers, findLateSanctionTier } from './utils/calculation';
 
 function App() {
   const [originalDueDate, setOriginalDueDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -108,18 +108,29 @@ function App() {
     setLocationCode('');
   };
 
-  const handleAddLateSanction = () => {
-    const dueDate = parseDate(originalDueDate);
-    const payDate = parseDate(ravvedimentoDate);
-    const daysLate = getDaysDiff(dueDate, payDate);
+  const lateCount = lateModelType === 'CU' ? parseInt(cuCount, 10) : 1;
+  const today = new Date().toISOString().split('T')[0];
+
+  const lateTiers = useMemo(() => {
+    if (isNaN(lateCount) || lateCount <= 0 || !originalDueDate) return [];
+    return getLateSanctionTiers(lateModelType, lateCount, parseDate(originalDueDate));
+  }, [lateModelType, lateCount, originalDueDate]);
+
+  const selectedLateTier = useMemo(
+    () => (ravvedimentoDate ? findLateSanctionTier(lateTiers, parseDate(ravvedimentoDate)) : undefined),
+    [lateTiers, ravvedimentoDate]
+  );
+  const todayLateTier = useMemo(() => findLateSanctionTier(lateTiers, parseDate(today)), [lateTiers, today]);
+
+  const handleAddLateSanction = (payDateOverride?: string) => {
+    const payDateStr = payDateOverride ?? ravvedimentoDate;
+    const daysLate = getDaysDiff(parseDate(originalDueDate), parseDate(payDateStr));
 
     if (daysLate <= 0) {
       alert("La data di ravvedimento deve essere successiva alla scadenza originaria per calcolare una sanzione per tardivo invio.");
       return;
     }
 
-    let penaltyAmount = 0;
-    let description = '';
     const declarationYear = parseInt(sanctionRefYear, 10);
     if (isNaN(declarationYear) || declarationYear < 2000 || declarationYear > 2099) {
       alert("Inserire un anno valido (2000-2099).");
@@ -127,61 +138,36 @@ function App() {
     }
     const incomeYear = declarationYear - 1;
 
-    if (lateModelType === 'CU') {
-      const count = parseInt(cuCount, 10);
-      if (isNaN(count) || count <= 0) {
-        alert("Inserire un numero valido di Certificazioni Uniche.");
-        return;
-      }
-      
-      // New CU rules
-      if (daysLate <= 5) {
-        alert("Nessuna sanzione per trasmissione CU entro 5 giorni dalla scadenza.");
-        return;
-      } else if (daysLate <= 60) {
-        // Base 100, reduced to 1/3 = 33.33, then ravvedimento 1/9 = 3.70
-        penaltyAmount = Math.min(count * 3.70, 16666.66 / 9); 
-        description = `Sanzione tardivo invio CU (entro 60gg) - ${count} cert. - Anno dichiarazione ${declarationYear} redditi ${incomeYear}`;
-      } else if (daysLate <= 90) {
-        // Base 100, ravvedimento 1/9 = 11.11
-        penaltyAmount = Math.min(count * 11.11, 50000 / 9);
-        description = `Sanzione tardivo invio CU (entro 90gg) - ${count} cert. - Anno dichiarazione ${declarationYear} redditi ${incomeYear}`;
-      } else {
-        // Termine 770 dell'anno successivo (31/10), in UTC come le date parsate
-        const oct31NextYear = utcDate(declarationYear + 1, 9, 31);
-        if (payDate <= oct31NextYear) {
-           penaltyAmount = Math.min(count * 12.50, 50000 / 8);
-           description = `Sanzione tardivo invio CU (entro termine 770 anno succ.) - ${count} cert. - Anno dichiarazione ${declarationYear} redditi ${incomeYear}`;
-        } else {
-           // Fallback to 1/7 (14.29)
-           penaltyAmount = Math.min(count * 14.29, 50000 / 7);
-           description = `Sanzione tardivo invio CU (oltre termine 770 anno succ.) - ${count} cert. - Anno dichiarazione ${declarationYear} redditi ${incomeYear}`;
-        }
-      }
-    } else if (lateModelType === '770') {
-      if (daysLate <= 90) {
-        // Base 250, ravvedimento 1/10 = 25.00
-        penaltyAmount = 25.00;
-        description = `Sanzione tardivo invio Modello 770 (entro 90gg) - Anno dichiarazione ${declarationYear} redditi ${incomeYear}`;
-      } else {
-        alert("Modello 770 tardivo oltre 90 giorni: Dichiarazione omessa. Ravvedimento NON ammesso.");
-        return;
-      }
+    if (isNaN(lateCount) || lateCount <= 0) {
+      alert("Inserire un numero valido di Certificazioni Uniche.");
+      return;
     }
+
+    const tier = findLateSanctionTier(lateTiers, parseDate(payDateStr));
+    if (!tier || tier.total === null) {
+      alert(tier?.note ?? "Nessuno scaglione di ravvedimento applicabile alla data indicata.");
+      return;
+    }
+
+    const description = lateModelType === 'CU'
+      ? `Sanzione tardivo invio CU (${tier.label}, rid. ${tier.reduction}) - ${lateCount} cert. - Anno dichiarazione ${declarationYear} redditi ${incomeYear}`
+      : `Sanzione tardivo invio Modello 770 (${tier.label}) - Anno dichiarazione ${declarationYear} redditi ${incomeYear}`;
+
+    if (payDateOverride) setRavvedimentoDate(payDateOverride);
 
     const newRow: F24Row = {
       id: crypto.randomUUID(),
       kind: 'SANZIONE',
       taxCode: '896E', // Sanzione pecuniaria sostituti d'imposta (F24EP)
       description: description,
-      originalAmount: penaltyAmount,
+      originalAmount: tier.total,
       referenceMonth: '',
       referenceYear: declarationYear.toString(),
       section: 'ERARIO',
       locationCode: ''
     };
-    
-    setRows([...rows, newRow]);
+
+    setRows(prev => [...prev, newRow]);
   };
 
   const handleRemoveRow = (id: string) => {
@@ -428,7 +414,7 @@ function App() {
 
             <div className="md:col-span-1">
               <button 
-                onClick={handleAddLateSanction}
+                onClick={() => handleAddLateSanction()}
                 className="w-full bg-italia-blue text-white py-3 px-4 rounded font-bold hover:bg-blue-700 dark:hover:bg-blue-600 shadow-md transition-all transform hover:scale-105 flex justify-center items-center"
                 title="Aggiungi Sanzione"
               >
@@ -437,9 +423,94 @@ function App() {
             </div>
           </div>
           <div className="mt-4 text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-700/50 p-3 rounded">
-            <strong>Info Calcolo:</strong> I giorni di ritardo vengono calcolati automaticamente in base alle date impostate nel riquadro 1. 
-            {lateModelType === 'CU' ? ' Entro 60gg: 3,70€ a CU (max 1.851,85€). Entro 90gg: 11,11€ a CU (max 5.555,55€).' : ' Entro 90gg: 25,00€ (1/10 di 250€). Oltre 90gg: Dichiarazione omessa.'}
+            <strong>Info Calcolo:</strong> Scaglione determinato dalla Data Ravvedimento del riquadro 1.
+            {lateModelType === 'CU'
+              ? ' CU: € 100 per certificazione (max € 50.000); se trasmessa entro 60 gg ridotta a 1/3 (max € 20.000). Si assume trasmissione della CU alla data di pagamento.'
+              : ' Mod. 770: entro 90 gg € 25,00 (1/10 di € 250). Oltre 90 gg dichiarazione omessa.'}
           </div>
+
+          {lateTiers.length > 0 && (
+            <div className="mt-6">
+              <h3 className="text-base font-bold text-italia-dark dark:text-white mb-2">Simulazione ravvedimento</h3>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 text-sm">
+                  <thead className="bg-gray-100 dark:bg-gray-900">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 dark:text-gray-300 uppercase">Scaglione</th>
+                      <th className="px-3 py-2 text-left text-xs font-bold text-gray-600 dark:text-gray-300 uppercase">Finestra</th>
+                      <th className="px-3 py-2 text-center text-xs font-bold text-gray-600 dark:text-gray-300 uppercase">Riduzione</th>
+                      <th className="px-3 py-2 text-right text-xs font-bold text-gray-600 dark:text-gray-300 uppercase">{lateModelType === 'CU' ? '€ per CU' : '€'}</th>
+                      <th className="px-3 py-2 text-right text-xs font-bold text-gray-600 dark:text-gray-300 uppercase">Totale</th>
+                      <th className="px-3 py-2 text-right text-xs font-bold text-gray-600 dark:text-gray-300 uppercase">Costo attesa</th>
+                      <th className="px-3 py-2 text-center text-xs font-bold text-gray-600 dark:text-gray-300 uppercase">Stato</th>
+                      <th className="px-3 py-2"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                    {lateTiers.map((tier) => {
+                      const timedTiers = lateTiers.filter(t => !t.informative);
+                      const next = tier.informative ? undefined : timedTiers[timedTiers.indexOf(tier) + 1];
+                      const expired = !tier.informative && tier.to !== null && tier.to < parseDate(today);
+                      const waitCost = !expired && next && next.total !== null && tier.total !== null ? next.total - tier.total : null;
+                      const isSelected = selectedLateTier?.id === tier.id;
+                      const isToday = todayLateTier?.id === tier.id;
+                      const useDate = tier.to
+                        ? tier.to.toISOString().split('T')[0]
+                        : (tier.from && tier.from > parseDate(today) ? tier.from.toISOString().split('T')[0] : today);
+                      const canUse = !tier.informative && !expired && tier.total !== null;
+
+                      let status = 'Futuro';
+                      if (tier.informative) status = 'Informativo';
+                      else if (expired) status = 'Scaduto';
+                      else if (isToday) status = 'Oggi';
+
+                      const rowClass = isSelected
+                        ? 'bg-blue-50 dark:bg-blue-900/30 font-semibold'
+                        : tier.informative || expired ? 'text-gray-400 dark:text-gray-500' : '';
+
+                      return (
+                        <tr key={tier.id} className={rowClass}>
+                          <td className="px-3 py-2 whitespace-nowrap text-gray-900 dark:text-gray-100">
+                            {tier.label}
+                            {isSelected && <span className="ml-2 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-italia-blue text-white">Data ravv.</span>}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap text-gray-600 dark:text-gray-400">
+                            {tier.from
+                              ? (tier.to ? `${formatDate(tier.from)} – ${formatDate(tier.to)}` : `dal ${formatDate(tier.from)}`)
+                              : <span className="italic">{tier.note}</span>}
+                          </td>
+                          <td className="px-3 py-2 text-center whitespace-nowrap">{tier.reduction}</td>
+                          <td className="px-3 py-2 text-right font-mono whitespace-nowrap">{tier.perUnit !== null ? formatCurrency(tier.perUnit) : '—'}</td>
+                          <td className="px-3 py-2 text-right font-mono whitespace-nowrap">
+                            {tier.total !== null ? formatCurrency(tier.total) : <span className="italic font-sans">{tier.note}</span>}
+                            {tier.capped && <span className="ml-1 text-[10px] font-bold text-orange-600" title="Tetto massimo applicato">MAX</span>}
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono whitespace-nowrap text-red-700 dark:text-red-400">
+                            {waitCost !== null && waitCost > 0 ? `+${formatCurrency(waitCost)}` : '—'}
+                          </td>
+                          <td className="px-3 py-2 text-center whitespace-nowrap">{status}</td>
+                          <td className="px-3 py-2 text-center whitespace-nowrap">
+                            {canUse && (
+                              <button
+                                onClick={() => handleAddLateSanction(useDate)}
+                                className="text-xs font-bold text-italia-blue dark:text-blue-300 hover:underline"
+                                title={`Imposta Data Ravvedimento al ${formatDate(parseDate(useDate))} e aggiunge la sanzione`}
+                              >
+                                Usa
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 italic">
+                "Costo attesa": maggior importo dovuto se il ravvedimento slitta allo scaglione successivo. "Usa" imposta la Data Ravvedimento all'ultimo giorno utile dello scaglione (modifica anche il calcolo dei tributi) e aggiunge la sanzione.
+              </p>
+            </div>
+          )}
         </section>
 
         {/* Calculation Table */}

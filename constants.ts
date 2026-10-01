@@ -30,6 +30,14 @@ export const DECLARATION_DEADLINE = { month: 9, day: 31 };
 // Entrata in vigore della Riforma Sanzioni D.Lgs 87/2024 (violazioni commesse dal 01/09/2024)
 export const SANCTION_REFORM_DATE = '2024-09-01';
 
+// Sanzione tardiva/omessa trasmissione CU (art. 4, c. 6-quinquies, DPR 322/1998):
+// € 100 per certificazione, massimo € 50.000; se trasmessa correttamente entro
+// 60 giorni dalla scadenza, ridotta a un terzo con massimo € 20.000.
+export const CU_SANCTION = { perCert: 100, max: 50000, reducedMax: 20000 };
+
+// Sanzione Mod. 770 presentato entro 90 giorni dalla scadenza (dichiarazione tardiva)
+export const MOD770_LATE_SANCTION = 250;
+
 // Sotto questa soglia l'interesse può non essere dovuto (minimale di versamento)
 export const MIN_INTEREST_THRESHOLD = 1.03;
 
