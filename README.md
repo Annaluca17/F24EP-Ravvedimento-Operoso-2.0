@@ -8,6 +8,9 @@ Strumento di calcolo del ravvedimento operoso per Enti Pubblici (modello F24EP):
 - Sanzioni per tardivo invio CU / Modello 770.
 - Anteprima fac-simile F24EP con aggregazione delle sanzioni ed export CSV / PDF.
 
+Se hai già il file `.txt` dell'F24 EP non versato, il [Generatore F24 EP](https://f24epeditor.vercel.app)
+(`Ravvedi un F24 EP`) produce direttamente il file ravveduto, con lo stesso calcolo.
+
 ## Avvio locale
 
 **Prerequisiti:** Node.js 18+
